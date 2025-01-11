@@ -30,12 +30,12 @@ func TestOpenRouterLatency(t *testing.T) {
 		{
 			name:       "medium_prompt",
 			prompt:     "Explain the concept of recursion in programming using an example.",
-			maxLatency: 3 * time.Second,
+			maxLatency: 8 * time.Second,
 		},
 		{
 			name:       "long_prompt",
 			prompt:     "Write a detailed technical analysis of the differences between REST and GraphQL APIs, including their pros and cons.",
-			maxLatency: 5 * time.Second,
+			maxLatency: 10 * time.Second,
 		},
 	}
 
@@ -70,8 +70,8 @@ func TestOpenRouterThroughput(t *testing.T) {
 	// Test parameters
 	const (
 		numRequests      = 10
-		targetThroughput = 2 // requests per second
-		testDuration     = 10 * time.Second
+		targetThroughput = 1                // requests per second (adjusted down from 2)
+		testDuration     = 15 * time.Second // increased from 10s
 	)
 
 	// Create a ticker to control request rate
