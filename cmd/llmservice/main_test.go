@@ -3,89 +3,156 @@ package main
 import (
 	"context"
 	"net"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/test/bufconn"
+
+	"llmservice/internal/provider"
+	"llmservice/internal/server"
+	pb "llmservice/proto"
 )
 
-const bufSize = 1024 * 1024
+const (
+	bufSize  = 1024 * 1024
+	testPort = "50051" // Use actual port for testing
+)
 
-// healthServer implements the gRPC health checking protocol
-type healthServer struct {
-	grpc_health_v1.UnimplementedHealthServer
+var lis *bufconn.Listener
+
+func init() {
+	lis = bufconn.Listen(bufSize)
 }
 
-func (s *healthServer) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{
-		Status: grpc_health_v1.HealthCheckResponse_SERVING,
-	}, nil
+func bufDialer(context.Context, string) (net.Conn, error) {
+	return lis.Dial()
 }
 
-func TestServerStartup(t *testing.T) {
-	lis := bufconn.Listen(bufSize)
-	server := grpc.NewServer()
+// mockProvider implements the LLMProvider interface for testing
+type mockProvider struct {
+	mock.Mock
+}
 
-	// Register health service for testing
-	grpc_health_v1.RegisterHealthServer(server, &healthServer{})
+func (m *mockProvider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMResponse, error) {
+	args := m.Called(ctx, req)
+	if resp := args.Get(0); resp != nil {
+		return resp.(*pb.LLMResponse), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockProvider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan *pb.LLMStreamResponse, <-chan error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(<-chan *pb.LLMStreamResponse), args.Get(1).(<-chan error)
+}
+
+func TestMain(t *testing.T) {
+	// Set up test environment
+	os.Setenv("PORT", testPort)
+	defer os.Unsetenv("PORT")
+
+	// Create mock provider
+	mockProv := &mockProvider{}
+	mockProv.On("Invoke", mock.Anything, mock.MatchedBy(func(req *pb.LLMRequest) bool {
+		return req.Provider == "mock"
+	})).Return(&pb.LLMResponse{
+		Content: "test response",
+	}, nil)
 
 	// Start server in background
 	go func() {
-		if err := server.Serve(lis); err != nil {
-			t.Logf("Server stopped serving: %v", err)
+		if err := startServer(mockProv); err != nil {
+			t.Errorf("server error: %v", err)
 		}
 	}()
 
-	// Create a buffer connection for testing
+	// Wait for server to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Set up client connection
 	ctx := context.Background()
 	conn, err := grpc.DialContext(ctx, "bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return lis.Dial()
-		}),
-		grpc.WithInsecure(),
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	require.NoError(t, err)
 	defer conn.Close()
 
-	// Wait for connection to be ready with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	client := pb.NewLLMServiceClient(conn)
 
-	connected := false
-	for !connected {
-		select {
-		case <-ctx.Done():
-			t.Fatal("Timeout waiting for connection to be ready")
-		default:
-			state := conn.GetState()
-			if state == connectivity.Ready {
-				connected = true
-			} else {
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
+	// Test cases
+	tests := []struct {
+		name        string
+		req         *pb.LLMRequest
+		expectError bool
+	}{
+		{
+			name: "valid request",
+			req: &pb.LLMRequest{
+				Provider: "mock",
+				Messages: []*pb.ChatMessage{
+					{
+						Role:    "user",
+						Content: "Hello",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid provider",
+			req: &pb.LLMRequest{
+				Provider: "invalid",
+				Messages: []*pb.ChatMessage{
+					{
+						Role:    "user",
+						Content: "Hello",
+					},
+				},
+			},
+			expectError: true,
+		},
 	}
 
-	// Verify server is running by making a health check call
-	healthClient := grpc_health_v1.NewHealthClient(conn)
-	resp, err := healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-	require.NoError(t, err, "Health check should succeed while server is running")
-	require.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, resp.Status)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := client.Invoke(ctx, tt.req)
+			if tt.expectError {
+				require.Error(t, err)
+				require.Nil(t, resp)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				require.Equal(t, "test response", resp.Content)
+			}
+		})
+	}
 
-	// Gracefully stop server
-	server.GracefulStop()
+	mockProv.AssertExpectations(t)
+}
 
-	// Close the listener
-	lis.Close()
+func startServer(mockProv provider.LLMProvider) error {
+	// Create a gRPC server
+	grpcServer := grpc.NewServer()
 
-	// Try to make another health check - should fail
-	_, err = healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-	require.Error(t, err, "Health check should fail after server shutdown")
-	require.Equal(t, codes.Unavailable, status.Code(err), "Expected Unavailable error after shutdown")
+	// Initialize providers
+	providers := map[string]provider.LLMProvider{
+		"mock": mockProv,
+	}
+
+	// Register LLM service
+	llmServer := server.New(providers)
+	pb.RegisterLLMServiceServer(grpcServer, llmServer)
+
+	// Enable reflection
+	reflection.Register(grpcServer)
+
+	// Serve using our bufconn listener
+	return grpcServer.Serve(lis)
 }

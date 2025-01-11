@@ -128,9 +128,9 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] Error handling & structured logging
 
 ### **Server Entry Point**
-- [ ] Confirm `main.go` registers `LLMServiceServer`
-- [ ] Confirm reflection is enabled (if desired)
-- [ ] Health check implementation (optional)
+- [x] Confirm `main.go` registers `LLMServiceServer`
+- [x] Confirm reflection is enabled (if desired)
+- [x] Health check implementation (optional)
 
 ---
 

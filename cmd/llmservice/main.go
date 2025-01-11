@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -10,6 +11,14 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+
+	"llmservice/internal/provider"
+	"llmservice/internal/provider/anthropic"
+	"llmservice/internal/provider/gemini"
+	"llmservice/internal/provider/openai"
+	"llmservice/internal/provider/openrouter"
+	"llmservice/internal/server"
+	pb "llmservice/proto"
 )
 
 const (
@@ -20,8 +29,7 @@ func main() {
 	// Initialize logger
 	logger, err := zap.NewProduction()
 	if err != nil {
-		fmt.Printf("Failed to initialize logger: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("failed to initialize logger: %v", err)
 	}
 	defer logger.Sync()
 
@@ -31,44 +39,86 @@ func main() {
 		port = defaultPort
 	}
 
-	// Create listener
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
-	if err != nil {
-		logger.Fatal("Failed to listen",
-			zap.String("port", port),
-			zap.Error(err),
-		)
+	// Initialize providers
+	providers := make(map[string]provider.LLMProvider)
+
+	// OpenRouter provider
+	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
+		p := openrouter.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "openai/gpt-3.5-turbo", // Default model for OpenRouter
+		})
+		providers["openrouter"] = p
+		logger.Info("initialized OpenRouter provider")
+	}
+
+	// OpenAI provider
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		p := openai.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "gpt-3.5-turbo", // Default model for OpenAI
+		})
+		providers["openai"] = p
+		logger.Info("initialized OpenAI provider")
+	}
+
+	// Anthropic provider
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		p := anthropic.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "claude-2", // Default model for Anthropic
+		})
+		providers["anthropic"] = p
+		logger.Info("initialized Anthropic provider")
+	}
+
+	// Gemini provider
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+		p, err := gemini.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "gemini-pro", // Default model for Gemini
+		})
+		if err != nil {
+			logger.Fatal("failed to initialize Gemini provider", zap.Error(err))
+		}
+		providers["gemini"] = p
+		logger.Info("initialized Gemini provider")
+	}
+
+	if len(providers) == 0 {
+		logger.Fatal("no providers initialized - please set at least one provider API key")
 	}
 
 	// Create gRPC server
-	server := grpc.NewServer()
+	grpcServer := grpc.NewServer()
 
-	// Enable reflection for debugging
-	reflection.Register(server)
+	// Register LLM service
+	llmServer := server.New(providers)
+	pb.RegisterLLMServiceServer(grpcServer, llmServer)
 
-	// Initialize signal handler for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// Enable reflection for development tools
+	reflection.Register(grpcServer)
 
-	// Start server
+	// Start listening
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+	if err != nil {
+		logger.Fatal("failed to listen", zap.Error(err))
+	}
+
+	// Handle graceful shutdown
 	go func() {
-		logger.Info("Starting gRPC server",
-			zap.String("port", port),
-		)
-		if err := server.Serve(lis); err != nil {
-			logger.Fatal("Failed to serve",
-				zap.Error(err),
-			)
-		}
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		sig := <-sigChan
+		logger.Info("received shutdown signal", zap.String("signal", sig.String()))
+
+		// Gracefully stop the gRPC server
+		grpcServer.GracefulStop()
 	}()
 
-	// Wait for shutdown signal
-	sig := <-sigChan
-	logger.Info("Received shutdown signal",
-		zap.String("signal", sig.String()),
-	)
-
-	// Gracefully stop the server
-	server.GracefulStop()
-	logger.Info("Server stopped gracefully")
+	// Start serving
+	logger.Info("starting gRPC server", zap.String("port", port))
+	if err := grpcServer.Serve(lis); err != nil {
+		logger.Fatal("failed to serve", zap.Error(err))
+	}
 }
