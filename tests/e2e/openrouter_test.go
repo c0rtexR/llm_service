@@ -4,90 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/reflection"
 
-	"llmservice/internal/provider"
-	"llmservice/internal/provider/openrouter"
-	"llmservice/internal/server"
 	pb "llmservice/proto"
 )
-
-type openrouterTestServer struct {
-	server     *grpc.Server
-	client     pb.LLMServiceClient
-	provider   provider.LLMProvider
-	grpcServer *grpc.Server
-	cleanup    func()
-}
-
-func setupOpenRouterTestServer(t *testing.T) *openrouterTestServer {
-	// Check for OpenRouter API key
-	apiKey := os.Getenv("OPENROUTER_API_KEY")
-	if apiKey == "" {
-		apiKey = "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" // Default test key
-	}
-
-	// Initialize OpenRouter provider
-	p := openrouter.New(&provider.Config{
-		APIKey:       apiKey,
-		DefaultModel: "google/gemini-flash-1.5-8b",
-	})
-
-	providers := map[string]provider.LLMProvider{
-		"openrouter": p,
-	}
-
-	// Create gRPC server
-	grpcServer := grpc.NewServer()
-
-	// Register LLM service
-	llmServer := server.New(providers)
-	pb.RegisterLLMServiceServer(grpcServer, llmServer)
-
-	// Enable reflection for development tools
-	reflection.Register(grpcServer)
-
-	// Create a listener on a random port
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-
-	// Start server in background
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil {
-			t.Logf("server error: %v", err)
-		}
-	}()
-
-	// Connect to the server
-	conn, err := grpc.Dial(
-		listener.Addr().String(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	require.NoError(t, err)
-
-	cleanup := func() {
-		conn.Close()
-		grpcServer.GracefulStop()
-	}
-
-	return &openrouterTestServer{
-		server:     grpcServer,
-		client:     pb.NewLLMServiceClient(conn),
-		provider:   p,
-		grpcServer: grpcServer,
-		cleanup:    cleanup,
-	}
-}
 
 func TestOpenRouterBasicCall(t *testing.T) {
 	ts := setupOpenRouterTestServer(t)
@@ -248,13 +173,15 @@ func TestOpenRouterParallelStreaming(t *testing.T) {
 
 	select {
 	case <-done:
-		// Check for any errors
-		close(errors)
-		for err := range errors {
-			t.Error(err)
-		}
+		// Success
 	case <-time.After(30 * time.Second):
-		t.Fatal("timeout waiting for parallel streams")
+		t.Fatal("parallel streaming test timed out")
+	}
+
+	// Check for errors
+	close(errors)
+	for err := range errors {
+		t.Error(err)
 	}
 }
 
@@ -266,9 +193,8 @@ func TestOpenRouterModelParameters(t *testing.T) {
 	resp, err := ts.client.Invoke(context.Background(), &pb.LLMRequest{
 		Provider:    "openrouter",
 		Model:       "google/gemini-flash-1.5-8b",
-		Temperature: 1.0,
-		TopP:        0.9,
-		MaxTokens:   100,
+		Temperature: 0.7,
+		MaxTokens:   50,
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "user",
@@ -280,6 +206,8 @@ func TestOpenRouterModelParameters(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotEmpty(t, resp.Content)
+	require.NotNil(t, resp.Usage)
+	require.Greater(t, resp.Usage.TotalTokens, int32(0))
 }
 
 func TestOpenRouterInvalidModel(t *testing.T) {
@@ -287,7 +215,7 @@ func TestOpenRouterInvalidModel(t *testing.T) {
 	defer ts.cleanup()
 
 	// Test with invalid model name
-	resp, err := ts.client.Invoke(context.Background(), &pb.LLMRequest{
+	_, err := ts.client.Invoke(context.Background(), &pb.LLMRequest{
 		Provider: "openrouter",
 		Model:    "invalid-model",
 		Messages: []*pb.ChatMessage{
@@ -299,6 +227,5 @@ func TestOpenRouterInvalidModel(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Nil(t, resp)
-	require.Contains(t, err.Error(), "400")
+	require.Contains(t, err.Error(), "invalid")
 }

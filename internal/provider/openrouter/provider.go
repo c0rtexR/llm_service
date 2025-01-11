@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"llmservice/internal/provider"
 	pb "llmservice/proto"
@@ -23,6 +25,20 @@ const (
 type Provider struct {
 	config     *provider.Config
 	httpClient *http.Client
+}
+
+var defaultTransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+	MaxIdleConnsPerHost:   10,
 }
 
 // requestBody represents the JSON structure for OpenRouter API requests
@@ -87,8 +103,11 @@ func New(config *provider.Config) *Provider {
 	}
 
 	return &Provider{
-		config:     config,
-		httpClient: &http.Client{},
+		config: config,
+		httpClient: &http.Client{
+			Transport: defaultTransport,
+			Timeout:   30 * time.Second,
+		},
 	}
 }
 
@@ -143,6 +162,8 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	// Set headers
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.config.APIKey))
+	httpReq.Header.Set("HTTP-Referer", "https://github.com/cursor-ai")
+	httpReq.Header.Set("X-Title", "Cursor LLM Service")
 
 	// Send request
 	resp, err := p.httpClient.Do(httpReq)
@@ -186,7 +207,7 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 
 // InvokeStream implements the LLMProvider interface for streaming requests
 func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan *pb.LLMStreamResponse, <-chan error) {
-	responseChan := make(chan *pb.LLMStreamResponse)
+	responseChan := make(chan *pb.LLMStreamResponse, 100) // Buffered channel for better performance
 	errorChan := make(chan error, 1)
 
 	go func() {
@@ -246,6 +267,9 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.config.APIKey))
 		httpReq.Header.Set("Accept", "text/event-stream")
+		httpReq.Header.Set("HTTP-Referer", "https://github.com/cursor-ai")
+		httpReq.Header.Set("X-Title", "Cursor LLM Service")
+		httpReq.Header.Set("Connection", "keep-alive")
 
 		// Send request
 		resp, err := p.httpClient.Do(httpReq)
@@ -262,48 +286,57 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			return
 		}
 
-		// Create scanner for SSE stream
-		scanner := bufio.NewScanner(resp.Body)
+		reader := bufio.NewReaderSize(resp.Body, 32*1024) // Larger buffer for better performance
 		var usage *pb.UsageInfo
 
-		for scanner.Scan() {
-			// Get the line
-			line := scanner.Text()
+		for {
+			// Check if context is cancelled
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 
-			// Skip empty lines
+			// Read until next event
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				errorChan <- fmt.Errorf("error reading stream: %w", err)
+				return
+			}
+
+			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
 			}
 
-			// Remove "data: " prefix
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			data := strings.TrimPrefix(line, "data: ")
 
-			// Skip [DONE] message
+			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
-				// Send final message with accumulated usage
-				responseChan <- &pb.LLMStreamResponse{
-					Type:  pb.ResponseType_TYPE_USAGE,
-					Usage: usage,
+				if usage != nil {
+					responseChan <- &pb.LLMStreamResponse{
+						Type:  pb.ResponseType_TYPE_USAGE,
+						Usage: usage,
+					}
 				}
 				return
 			}
 
-			// Parse the SSE data
 			var streamResp streamResponseBody
 			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
 				errorChan <- fmt.Errorf("failed to parse SSE data: %w", err)
 				return
 			}
 
-			// Check if we have choices
 			if len(streamResp.Choices) == 0 {
 				continue
 			}
 
-			// Update usage if available
 			if streamResp.Usage != nil {
 				usage = &pb.UsageInfo{
 					PromptTokens:     streamResp.Usage.PromptTokens,
@@ -312,7 +345,6 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 				}
 			}
 
-			// Get the content chunk and finish reason
 			chunk := streamResp.Choices[0].Delta.Content
 			if streamResp.Choices[0].FinishReason != "" {
 				responseChan <- &pb.LLMStreamResponse{
@@ -321,18 +353,12 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 				}
 			}
 
-			// Send non-empty chunks
 			if chunk != "" {
 				responseChan <- &pb.LLMStreamResponse{
 					Type:    pb.ResponseType_TYPE_CONTENT,
 					Content: chunk,
 				}
 			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			errorChan <- fmt.Errorf("error reading stream: %w", err)
-			return
 		}
 	}()
 
