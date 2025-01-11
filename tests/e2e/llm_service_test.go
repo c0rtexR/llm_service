@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -13,31 +14,119 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 
+	"llmservice/internal/provider"
+	"llmservice/internal/provider/anthropic"
+	"llmservice/internal/provider/gemini"
+	"llmservice/internal/provider/openai"
+	"llmservice/internal/provider/openrouter"
+	"llmservice/internal/server"
 	pb "llmservice/proto"
 )
 
-func setupClient(t *testing.T) pb.LLMServiceClient {
-	// Connect to the gRPC server
-	conn, err := grpc.Dial("localhost:50051",
+type testServer struct {
+	server     *grpc.Server
+	client     pb.LLMServiceClient
+	providers  map[string]provider.LLMProvider
+	grpcServer *grpc.Server
+	cleanup    func()
+}
+
+func setupTestServer(t *testing.T) *testServer {
+	// Initialize providers
+	providers := make(map[string]provider.LLMProvider)
+
+	// OpenRouter provider
+	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" && !strings.HasPrefix(key, "sk-test") {
+		p := openrouter.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "openai/gpt-3.5-turbo",
+		})
+		providers["openrouter"] = p
+	}
+
+	// OpenAI provider
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" && !strings.HasPrefix(key, "sk-test") {
+		p := openai.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "gpt-3.5-turbo",
+		})
+		providers["openai"] = p
+	}
+
+	// Anthropic provider
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" && !strings.HasPrefix(key, "sk-test") {
+		p := anthropic.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "claude-2",
+		})
+		providers["anthropic"] = p
+	}
+
+	// Gemini provider
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" && !strings.HasPrefix(key, "sk-test") {
+		p, err := gemini.New(&provider.Config{
+			APIKey:       key,
+			DefaultModel: "gemini-1.5-flash-8b",
+		})
+		if err == nil {
+			providers["gemini"] = p
+		}
+	}
+
+	// Create gRPC server
+	grpcServer := grpc.NewServer()
+
+	// Register LLM service
+	llmServer := server.New(providers)
+	pb.RegisterLLMServiceServer(grpcServer, llmServer)
+
+	// Enable reflection for development tools
+	reflection.Register(grpcServer)
+
+	// Create a listener on a random port
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	// Start server in background
+	go func() {
+		if err := grpcServer.Serve(listener); err != nil {
+			t.Logf("server error: %v", err)
+		}
+	}()
+
+	// Connect to the server
+	conn, err := grpc.Dial(
+		listener.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
 
-	return pb.NewLLMServiceClient(conn)
+	cleanup := func() {
+		conn.Close()
+		grpcServer.GracefulStop()
+	}
+
+	return &testServer{
+		server:     grpcServer,
+		client:     pb.NewLLMServiceClient(conn),
+		providers:  providers,
+		grpcServer: grpcServer,
+		cleanup:    cleanup,
+	}
 }
 
 func TestBasicSingleCall(t *testing.T) {
-	// Skip if no OpenRouter API key
-	if os.Getenv("OPENROUTER_API_KEY") == "" {
-		t.Skip("OPENROUTER_API_KEY not set")
+	ts := setupTestServer(t)
+	defer ts.cleanup()
+
+	if _, ok := ts.providers["openrouter"]; !ok {
+		t.Skip("OpenRouter provider not available")
 	}
 
-	client := setupClient(t)
-
 	// Test basic request
-	resp, err := client.Invoke(context.Background(), &pb.LLMRequest{
+	resp, err := ts.client.Invoke(context.Background(), &pb.LLMRequest{
 		Provider: "openrouter",
 		Model:    "google/gemini-flash-1.5-8b",
 		Messages: []*pb.ChatMessage{
@@ -55,15 +144,15 @@ func TestBasicSingleCall(t *testing.T) {
 }
 
 func TestSimpleStreamedCall(t *testing.T) {
-	// Skip if no OpenAI API key
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		t.Skip("OPENAI_API_KEY not set")
+	ts := setupTestServer(t)
+	defer ts.cleanup()
+
+	if _, ok := ts.providers["openai"]; !ok {
+		t.Skip("OpenAI provider not available")
 	}
 
-	client := setupClient(t)
-
 	// Start streaming request
-	stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
+	stream, err := ts.client.InvokeStream(context.Background(), &pb.LLMRequest{
 		Provider: "openai",
 		Model:    "gpt-4o-mini",
 		Messages: []*pb.ChatMessage{
@@ -108,12 +197,12 @@ func TestSimpleStreamedCall(t *testing.T) {
 }
 
 func TestAnthropicCachingSingleBlock(t *testing.T) {
-	// Skip if no Anthropic API key
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set")
-	}
+	ts := setupTestServer(t)
+	defer ts.cleanup()
 
-	client := setupClient(t)
+	if _, ok := ts.providers["anthropic"]; !ok {
+		t.Skip("Anthropic provider not available")
+	}
 
 	// Create a request with ephemeral caching
 	req := &pb.LLMRequest{
@@ -137,7 +226,7 @@ func TestAnthropicCachingSingleBlock(t *testing.T) {
 
 	// First request
 	start1 := time.Now()
-	resp1, err := client.Invoke(context.Background(), req)
+	resp1, err := ts.client.Invoke(context.Background(), req)
 	duration1 := time.Since(start1)
 	require.NoError(t, err)
 	require.NotNil(t, resp1)
@@ -146,7 +235,7 @@ func TestAnthropicCachingSingleBlock(t *testing.T) {
 
 	// Second request (should hit cache)
 	start2 := time.Now()
-	resp2, err := client.Invoke(context.Background(), req)
+	resp2, err := ts.client.Invoke(context.Background(), req)
 	duration2 := time.Since(start2)
 	require.NoError(t, err)
 	require.NotNil(t, resp2)
@@ -165,12 +254,12 @@ func TestAnthropicCachingSingleBlock(t *testing.T) {
 }
 
 func TestAnthropicCachingMultipleBlocks(t *testing.T) {
-	// Skip if no Anthropic API key
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		t.Skip("ANTHROPIC_API_KEY not set")
-	}
+	ts := setupTestServer(t)
+	defer ts.cleanup()
 
-	client := setupClient(t)
+	if _, ok := ts.providers["anthropic"]; !ok {
+		t.Skip("Anthropic provider not available")
+	}
 
 	// Create a request with multiple ephemeral blocks
 	req := &pb.LLMRequest{
@@ -198,7 +287,7 @@ func TestAnthropicCachingMultipleBlocks(t *testing.T) {
 
 	// First request
 	start1 := time.Now()
-	resp1, err := client.Invoke(context.Background(), req)
+	resp1, err := ts.client.Invoke(context.Background(), req)
 	duration1 := time.Since(start1)
 	require.NoError(t, err)
 	require.NotNil(t, resp1)
@@ -207,7 +296,7 @@ func TestAnthropicCachingMultipleBlocks(t *testing.T) {
 
 	// Second request (should hit cache)
 	start2 := time.Now()
-	resp2, err := client.Invoke(context.Background(), req)
+	resp2, err := ts.client.Invoke(context.Background(), req)
 	duration2 := time.Since(start2)
 	require.NoError(t, err)
 	require.NotNil(t, resp2)
@@ -221,12 +310,13 @@ func TestAnthropicCachingMultipleBlocks(t *testing.T) {
 }
 
 func TestParallelStreaming(t *testing.T) {
-	// Skip if no OpenAI API key
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		t.Skip("OPENAI_API_KEY not set")
+	ts := setupTestServer(t)
+	defer ts.cleanup()
+
+	if _, ok := ts.providers["openai"]; !ok {
+		t.Skip("OpenAI provider not available")
 	}
 
-	client := setupClient(t)
 	const numStreams = 5
 
 	var wg sync.WaitGroup
@@ -239,7 +329,7 @@ func TestParallelStreaming(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 
-			stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
+			stream, err := ts.client.InvokeStream(context.Background(), &pb.LLMRequest{
 				Provider: "openai",
 				Model:    "gpt-4o-mini",
 				Messages: []*pb.ChatMessage{
@@ -303,10 +393,11 @@ func TestParallelStreaming(t *testing.T) {
 }
 
 func TestInvalidProvider(t *testing.T) {
-	client := setupClient(t)
+	ts := setupTestServer(t)
+	defer ts.cleanup()
 
 	// Test invalid provider
-	resp, err := client.Invoke(context.Background(), &pb.LLMRequest{
+	resp, err := ts.client.Invoke(context.Background(), &pb.LLMRequest{
 		Provider: "invalid-provider",
 		Messages: []*pb.ChatMessage{
 			{
@@ -322,17 +413,17 @@ func TestInvalidProvider(t *testing.T) {
 }
 
 func TestLargePrompt(t *testing.T) {
-	// Skip if no OpenAI API key
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		t.Skip("OPENAI_API_KEY not set")
-	}
+	ts := setupTestServer(t)
+	defer ts.cleanup()
 
-	client := setupClient(t)
+	if _, ok := ts.providers["openai"]; !ok {
+		t.Skip("OpenAI provider not available")
+	}
 
 	// Create a large prompt (~1MB)
 	largePrompt := strings.Repeat("This is a test prompt. ", 50000)
 
-	stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
+	stream, err := ts.client.InvokeStream(context.Background(), &pb.LLMRequest{
 		Provider: "openai",
 		Model:    "gpt-4o-mini",
 		Messages: []*pb.ChatMessage{
@@ -365,9 +456,10 @@ func TestLargePrompt(t *testing.T) {
 }
 
 func TestMissingAPIKey(t *testing.T) {
-	client := setupClient(t)
+	ts := setupTestServer(t)
+	defer ts.cleanup()
 
-	resp, err := client.Invoke(context.Background(), &pb.LLMRequest{
+	resp, err := ts.client.Invoke(context.Background(), &pb.LLMRequest{
 		Provider: "unsupported-provider",
 		Model:    "google/gemini-flash-1.5-8b",
 		Messages: []*pb.ChatMessage{
@@ -384,13 +476,14 @@ func TestMissingAPIKey(t *testing.T) {
 }
 
 func TestOpenRouterStreaming(t *testing.T) {
-	key := os.Getenv("OPENROUTER_API_KEY")
-	if key == "" {
-		t.Skip("OPENROUTER_API_KEY not set")
+	ts := setupTestServer(t)
+	defer ts.cleanup()
+
+	if _, ok := ts.providers["openrouter"]; !ok {
+		t.Skip("OpenRouter provider not available")
 	}
 
-	client := setupClient(t)
-	stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
+	stream, err := ts.client.InvokeStream(context.Background(), &pb.LLMRequest{
 		Provider: "openrouter",
 		Model:    "google/gemini-flash-1.5-8b",
 		Messages: []*pb.ChatMessage{
