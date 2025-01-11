@@ -4,7 +4,7 @@
 // - protoc             (unknown)
 // source: proto/llm_service.proto
 
-package llmpb
+package proto
 
 import (
 	context "context"
@@ -27,11 +27,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// LLMService provides methods to interact with LLM providers
+// LLMService provides access to various LLM providers
 type LLMServiceClient interface {
-	// Invoke sends a request to an LLM and returns a single response
+	// Invoke sends a request to an LLM provider and returns a response
 	Invoke(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (*LLMResponse, error)
-	// InvokeStream sends a request to an LLM and returns a stream of responses
+	// InvokeStream sends a request to an LLM provider and returns a stream of responses
 	InvokeStream(ctx context.Context, in *LLMRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LLMStreamResponse], error)
 }
 
@@ -76,11 +76,11 @@ type LLMService_InvokeStreamClient = grpc.ServerStreamingClient[LLMStreamRespons
 // All implementations must embed UnimplementedLLMServiceServer
 // for forward compatibility.
 //
-// LLMService provides methods to interact with LLM providers
+// LLMService provides access to various LLM providers
 type LLMServiceServer interface {
-	// Invoke sends a request to an LLM and returns a single response
+	// Invoke sends a request to an LLM provider and returns a response
 	Invoke(context.Context, *LLMRequest) (*LLMResponse, error)
-	// InvokeStream sends a request to an LLM and returns a stream of responses
+	// InvokeStream sends a request to an LLM provider and returns a stream of responses
 	InvokeStream(*LLMRequest, grpc.ServerStreamingServer[LLMStreamResponse]) error
 	mustEmbedUnimplementedLLMServiceServer()
 }

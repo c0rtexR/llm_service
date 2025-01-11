@@ -2,85 +2,106 @@ syntax = "proto3";
 
 package llm.v1;
 
-option go_package = "llmservice/proto/llm/v1;llmpb";
+option go_package = "llmservice/proto";
+
+// LLMService provides access to various LLM providers
+service LLMService {
+  // Invoke sends a request to an LLM provider and returns a response
+  rpc Invoke(LLMRequest) returns (LLMResponse);
+  
+  // InvokeStream sends a request to an LLM provider and returns a stream of responses
+  rpc InvokeStream(LLMRequest) returns (stream LLMStreamResponse);
+}
 
 // LLMRequest represents a request to an LLM provider
 message LLMRequest {
-  // The provider to use (e.g., "openrouter", "anthropic", "openai", "gemini")
+  // Provider specifies which LLM provider to use (e.g., "openai", "anthropic")
   string provider = 1;
   
-  // The model to use (e.g., "gpt-4", "claude-2", etc.)
+  // Model specifies which model to use (e.g., "gpt-3.5-turbo", "claude-2")
   string model = 2;
   
-  // The messages to send to the LLM
+  // Messages contains the conversation history
   repeated ChatMessage messages = 3;
   
-  // Whether to enable streaming of responses
-  bool enable_stream = 4;
+  // Temperature controls randomness in the response (0.0 to 1.0)
+  float temperature = 4;
   
-  // Whether to enable caching (if supported by provider)
-  bool enable_cache = 5;
+  // MaxTokens limits the length of the response
+  int32 max_tokens = 5;
   
-  // Optional parameters for model tuning
-  float temperature = 6;
-  int32 max_tokens = 7;
-  float top_p = 8;
+  // TopP controls diversity via nucleus sampling
+  float top_p = 6;
+  
+  // CacheControl specifies caching behavior
+  CacheControl cache_control = 7;
 }
 
 // ChatMessage represents a single message in the conversation
 message ChatMessage {
-  // The role of the message sender (e.g., "system", "user", "assistant")
+  // Role specifies who sent the message (e.g., "system", "user", "assistant")
   string role = 1;
   
-  // The content of the message
+  // Content contains the actual message text
   string content = 2;
-  
-  // Optional cache control settings
-  CacheControl cache_control = 3;
 }
 
-// CacheControl specifies caching behavior for a message
+// CacheControl specifies caching behavior for the request
 message CacheControl {
-  // The type of caching to use (e.g., "ephemeral")
-  string type = 1;
+  // UseCache indicates whether to use cached responses
+  bool use_cache = 1;
+  
+  // TTL specifies how long to cache the response (in seconds)
+  int32 ttl = 2;
 }
 
-// LLMResponse represents a final response from an LLM
+// LLMResponse represents a response from an LLM provider
 message LLMResponse {
-  // The generated content
+  // Content contains the response text
   string content = 1;
   
-  // Usage statistics
+  // Usage provides token usage statistics
   UsageInfo usage = 2;
 }
 
-// LLMStreamResponse represents a streaming chunk of the response
+// LLMStreamResponse represents a chunk of a streaming response
 message LLMStreamResponse {
-  // The chunk of content
-  string content_chunk = 1;
+  // Type indicates what kind of response this is
+  ResponseType type = 1;
   
-  // Whether this is the final chunk
-  bool is_final = 2;
+  // Content contains the response text (for TYPE_CONTENT)
+  string content = 2;
   
-  // Usage statistics (may be partial/cumulative depending on provider)
-  UsageInfo usage = 3;
+  // FinishReason indicates why the response ended (for TYPE_FINISH_REASON)
+  string finish_reason = 3;
+  
+  // Usage provides token usage statistics (for TYPE_USAGE)
+  UsageInfo usage = 4;
 }
 
-// UsageInfo contains token usage statistics
+// ResponseType indicates what kind of stream response this is
+enum ResponseType {
+  // TYPE_UNSPECIFIED is the default value
+  TYPE_UNSPECIFIED = 0;
+  
+  // TYPE_CONTENT indicates this response contains content text
+  TYPE_CONTENT = 1;
+  
+  // TYPE_FINISH_REASON indicates this response contains the finish reason
+  TYPE_FINISH_REASON = 2;
+  
+  // TYPE_USAGE indicates this response contains usage statistics
+  TYPE_USAGE = 3;
+}
+
+// UsageInfo provides token usage statistics
 message UsageInfo {
+  // PromptTokens is the number of tokens in the prompt
   int32 prompt_tokens = 1;
-  int32 completion_tokens = 2;
-  int32 total_tokens = 3;
-  // Specific to Anthropic's cache
-  int32 cache_read_input_tokens = 4;
-  int32 cache_creation_input_tokens = 5;
-}
-
-// LLMService provides methods to interact with LLM providers
-service LLMService {
-  // Invoke sends a request to an LLM and returns a single response
-  rpc Invoke(LLMRequest) returns (LLMResponse) {}
   
-  // InvokeStream sends a request to an LLM and returns a stream of responses
-  rpc InvokeStream(LLMRequest) returns (stream LLMStreamResponse) {}
+  // CompletionTokens is the number of tokens in the completion
+  int32 completion_tokens = 2;
+  
+  // TotalTokens is the total number of tokens used
+  int32 total_tokens = 3;
 } 

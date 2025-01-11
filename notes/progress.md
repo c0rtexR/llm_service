@@ -26,11 +26,11 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 
 ### **Proto Definition**
 - [x] Create `proto/llm_service.proto` with:
-  - [x] `message LLMRequest` (fields: `provider`, `model`, `messages[]`, tuning params, `enable_stream`, `enable_cache`)
-  - [x] `message ChatMessage` (fields: `role`, `content`, `cache_control`)
-  - [x] `message CacheControl` (fields: `type`, e.g. `"ephemeral"`)
+  - [x] `message LLMRequest` (fields: `provider`, `model`, `messages[]`, tuning params)
+  - [x] `message ChatMessage` (fields: `role`, `content`)
+  - [x] `message CacheControl` (fields: `use_cache`, `ttl`)
   - [x] `message LLMResponse` (final output)
-  - [x] `message LLMStreamResponse` (stream chunks, `is_final`)
+  - [x] `message LLMStreamResponse` (stream chunks with type, content, finish_reason, usage)
   - [x] `service LLMService` with:
     - [x] `rpc Invoke(LLMRequest) returns (LLMResponse);`
     - [x] `rpc InvokeStream(LLMRequest) returns (stream LLMStreamResponse);`
@@ -106,36 +106,30 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
   - [x] Parse SSE line-by-line
   - [x] Convert partial messages to `LLMStreamResponse`
 - [x] Handle optional fields (temperature, top_p, etc.) if supported
-- [x] Ignore `cache_control` if not used by OpenRouter
 - [x] Write unit tests with mock HTTP
 
 ### **Anthropic Provider**
 - [x] Implement `Invoke()`:
   - [x] Create JSON structure with `system[]` and `messages[]`
-  - [x] Attach `"cache_control": {"type":"ephemeral"}` if `ChatMessage.cache_control.type=="ephemeral"`
   - [x] Set `"x-api-key": "$ANTHROPIC_API_KEY"` and `"anthropic-version"`
   - [x] Parse completion and usage fields
-- [ ] Implement `InvokeStream()` (SSE-based):
-  - [ ] If `enable_stream` is true, add `"stream": true`
-  - [ ] Parse SSE for partial tokens
-  - [ ] Map each chunk to `LLMStreamResponse`
-- [x] Ephemeral caching logic:
-  - [x] For large blocks with `cache_control`, forward unchanged text to get a cache hit
-  - [x] Check usage fields for `cache_creation_input_tokens` or `cache_read_input_tokens`
-- [x] Unit tests with mocked Anthropic SSE
+- [x] Implement `InvokeStream()` (SSE-based):
+  - [x] Add `"stream": true`
+  - [x] Parse SSE for partial tokens
+  - [x] Map each chunk to `LLMStreamResponse`
+- [x] Write unit tests with mocked Anthropic SSE
 
 ### **OpenAI Provider**
-- [ ] Implement `Invoke()`:
-  - [ ] `POST https://api.openai.com/v1/chat/completions`
-  - [ ] Map `messages` to OpenAI's format
-  - [ ] Use `"Authorization": "Bearer $OPENAI_API_KEY"`
-  - [ ] Parse `choices[0].message.content`
-- [ ] Implement `InvokeStream()`:
-  - [ ] Set `"stream": true`
-  - [ ] Parse SSE or chunked data from OpenAI
-  - [ ] Convert to `LLMStreamResponse`
-- [ ] Ignore `cache_control` (not supported)
-- [ ] Unit tests with mock HTTP/OpenAI responses
+- [x] Implement `Invoke()`:
+  - [x] `POST https://api.openai.com/v1/chat/completions`
+  - [x] Map `messages` to OpenAI's format
+  - [x] Use `"Authorization": "Bearer $OPENAI_API_KEY"`
+  - [x] Parse `choices[0].message.content`
+- [x] Implement `InvokeStream()`:
+  - [x] Set `"stream": true`
+  - [x] Parse SSE or chunked data from OpenAI
+  - [x] Convert to `LLMStreamResponse`
+- [x] Write unit tests with mock HTTP/OpenAI responses
 
 ### **Gemini Provider**
 - [ ] Implement using `github.com/google/generative-ai-go/genai`
@@ -143,8 +137,7 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
   - [ ] Map `temperature`, `top_k`, `top_p`, etc.
   - [ ] Parse final content
 - [ ] Check if streaming is supported (if not, you might only do unary)
-- [ ] Ignore `cache_control`
-- [ ] Unit tests (mock the Gemini client or calls)
+- [ ] Write unit tests (mock the Gemini client or calls)
 
 ---
 

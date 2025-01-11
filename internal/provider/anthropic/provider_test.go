@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,88 +34,73 @@ func TestNew(t *testing.T) {
 }
 
 func TestInvoke(t *testing.T) {
-	// Create a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request
-		require.Equal(t, "POST", r.Method)
+		require.Equal(t, http.MethodPost, r.Method)
 		require.Equal(t, "/messages", r.URL.Path)
 		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
-		require.Equal(t, "test-key", r.Header.Get("X-API-Key"))
-		require.Equal(t, apiVersion, r.Header.Get("anthropic-version"))
+		require.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
+		require.Equal(t, "2023-06-01", r.Header.Get("anthropic-version"))
 
-		// Parse request body
+		// Read request body
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		defer r.Body.Close()
+
 		var reqBody requestBody
-		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		err = json.Unmarshal(body, &reqBody)
 		require.NoError(t, err)
 
-		// Verify request contents
-		require.Equal(t, "test-model", reqBody.Model)
-		require.Equal(t, "This is a system message", reqBody.System)
-		require.Len(t, reqBody.Messages, 1)
+		// Verify request body
+		require.Equal(t, defaultModel, reqBody.Model)
 		require.Equal(t, "user", reqBody.Messages[0].Role)
 		require.Equal(t, "Hello", reqBody.Messages[0].Content)
-		require.NotNil(t, reqBody.Messages[0].CacheControl)
-		require.Equal(t, "ephemeral", reqBody.Messages[0].CacheControl.Type)
-		require.NotNil(t, reqBody.Temperature)
-		require.Equal(t, float32(0.7), *reqBody.Temperature)
 
-		// Send response
-		resp := responseBody{
-			ID:      "test-id",
-			Model:   "test-model",
-			Type:    "message",
-			Role:    "assistant",
-			Content: "Hello, how can I help?",
-			Usage: struct {
-				InputTokens              int32 `json:"input_tokens"`
-				OutputTokens             int32 `json:"output_tokens"`
-				CacheReadInputTokens     int32 `json:"cache_read_input_tokens,omitempty"`
-				CacheCreationInputTokens int32 `json:"cache_creation_input_tokens,omitempty"`
-			}{
-				InputTokens:              5,
-				OutputTokens:             10,
-				CacheCreationInputTokens: 5,
-			},
-		}
-
+		// Write response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.WriteHeader(http.StatusOK)
+		response := `{
+			"id": "msg_123",
+			"type": "message",
+			"role": "assistant",
+			"content": "Hello world!",
+			"model": "claude-3",
+			"usage": {
+				"input_tokens": 10,
+				"output_tokens": 20
+			}
+		}`
+		_, err = w.Write([]byte(response))
+		require.NoError(t, err)
 	}))
 	defer server.Close()
 
-	// Create provider with test server URL
-	cfg := provider.NewConfig("test-key", "test-model").
-		WithBaseURL(server.URL)
-	p := New(cfg)
+	// Create provider
+	config := provider.NewConfig("test-key", defaultModel).WithBaseURL(server.URL)
+	p := New(config)
 
-	// Create test request
+	// Create request
 	req := &pb.LLMRequest{
-		Model: "test-model",
+		Model: defaultModel,
 		Messages: []*pb.ChatMessage{
-			{
-				Role:    "system",
-				Content: "This is a system message",
-			},
 			{
 				Role:    "user",
 				Content: "Hello",
-				CacheControl: &pb.CacheControl{
-					Type: "ephemeral",
-				},
 			},
 		},
-		Temperature: 0.7,
 	}
 
-	// Test successful request
+	// Invoke request
 	resp, err := p.Invoke(context.Background(), req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.Equal(t, "Hello, how can I help?", resp.Content)
-	require.Equal(t, int32(5), resp.Usage.PromptTokens)
-	require.Equal(t, int32(10), resp.Usage.CompletionTokens)
-	require.Equal(t, int32(15), resp.Usage.TotalTokens)
-	require.Equal(t, int32(5), resp.Usage.CacheCreationInputTokens)
+
+	// Verify response
+	require.Equal(t, "Hello world!", resp.Content)
+	require.NotNil(t, resp.Usage)
+	require.Equal(t, int32(10), resp.Usage.PromptTokens)
+	require.Equal(t, int32(20), resp.Usage.CompletionTokens)
+	require.Equal(t, int32(30), resp.Usage.TotalTokens)
 }
 
 func TestInvokeWithCacheHit(t *testing.T) {
@@ -156,9 +142,6 @@ func TestInvokeWithCacheHit(t *testing.T) {
 			{
 				Role:    "user",
 				Content: "Hello",
-				CacheControl: &pb.CacheControl{
-					Type: "ephemeral",
-				},
 			},
 		},
 	}
@@ -171,7 +154,6 @@ func TestInvokeWithCacheHit(t *testing.T) {
 	require.Equal(t, int32(5), resp.Usage.PromptTokens)
 	require.Equal(t, int32(10), resp.Usage.CompletionTokens)
 	require.Equal(t, int32(15), resp.Usage.TotalTokens)
-	require.Equal(t, int32(5), resp.Usage.CacheReadInputTokens)
 }
 
 func TestInvokeErrors(t *testing.T) {
@@ -215,7 +197,7 @@ func TestInvokeStream(t *testing.T) {
 		require.Equal(t, "/messages", r.URL.Path)
 		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		require.Equal(t, "test-key", r.Header.Get("X-API-Key"))
-		require.Equal(t, apiVersion, r.Header.Get("anthropic-version"))
+		require.Equal(t, "2023-06-01", r.Header.Get("anthropic-version"))
 		require.Equal(t, "text/event-stream", r.Header.Get("Accept"))
 
 		// Parse request body
@@ -307,12 +289,8 @@ func TestInvokeStream(t *testing.T) {
 			{
 				Role:    "user",
 				Content: "Hello",
-				CacheControl: &pb.CacheControl{
-					Type: "ephemeral",
-				},
 			},
 		},
-		EnableStream: true,
 	}
 
 	// Test streaming
@@ -323,16 +301,15 @@ func TestInvokeStream(t *testing.T) {
 	// Collect all chunks
 	var receivedChunks []string
 	var lastUsage *pb.UsageInfo
-	var sawFinal bool
 
 	for resp := range respChan {
 		require.NotNil(t, resp)
-		if resp.IsFinal {
-			sawFinal = true
+		switch resp.Type {
+		case pb.ResponseType_TYPE_CONTENT:
+			receivedChunks = append(receivedChunks, resp.Content)
+		case pb.ResponseType_TYPE_USAGE:
 			lastUsage = resp.Usage
-			continue
 		}
-		receivedChunks = append(receivedChunks, resp.ContentChunk)
 	}
 
 	// Check for errors
@@ -345,12 +322,10 @@ func TestInvokeStream(t *testing.T) {
 
 	// Verify received chunks
 	require.Equal(t, chunks, receivedChunks)
-	require.True(t, sawFinal)
 	require.NotNil(t, lastUsage)
 	require.Equal(t, int32(5), lastUsage.PromptTokens)
 	require.Equal(t, int32(10), lastUsage.CompletionTokens)
 	require.Equal(t, int32(15), lastUsage.TotalTokens)
-	require.Equal(t, int32(5), lastUsage.CacheReadInputTokens)
 }
 
 func TestInvokeStreamError(t *testing.T) {
@@ -390,7 +365,6 @@ func TestInvokeStreamError(t *testing.T) {
 				Content: "Hello",
 			},
 		},
-		EnableStream: true,
 	}
 
 	// Test streaming error

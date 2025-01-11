@@ -248,7 +248,6 @@ func TestInvokeStream(t *testing.T) {
 				Content: "Hello",
 			},
 		},
-		EnableStream: true,
 	}
 
 	// Test streaming
@@ -259,16 +258,15 @@ func TestInvokeStream(t *testing.T) {
 	// Collect all chunks
 	var receivedChunks []string
 	var lastUsage *pb.UsageInfo
-	var sawFinal bool
 
 	for resp := range respChan {
 		require.NotNil(t, resp)
-		if resp.IsFinal {
-			sawFinal = true
+		switch resp.Type {
+		case pb.ResponseType_TYPE_CONTENT:
+			receivedChunks = append(receivedChunks, resp.Content)
+		case pb.ResponseType_TYPE_USAGE:
 			lastUsage = resp.Usage
-			continue
 		}
-		receivedChunks = append(receivedChunks, resp.ContentChunk)
 	}
 
 	// Check for errors
@@ -281,7 +279,6 @@ func TestInvokeStream(t *testing.T) {
 
 	// Verify received chunks
 	require.Equal(t, chunks, receivedChunks)
-	require.True(t, sawFinal)
 	require.NotNil(t, lastUsage)
 	require.Equal(t, int32(5), lastUsage.PromptTokens)
 	require.Equal(t, int32(10), lastUsage.CompletionTokens)
@@ -310,7 +307,6 @@ func TestInvokeStreamErrors(t *testing.T) {
 				Content: "Hello",
 			},
 		},
-		EnableStream: true,
 	}
 
 	// Test streaming error

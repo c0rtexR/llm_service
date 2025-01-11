@@ -116,13 +116,6 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 			Content: msg.Content,
 		}
 
-		// Handle cache control if present
-		if msg.CacheControl != nil && msg.CacheControl.Type == "ephemeral" {
-			chatMsg.CacheControl = &cacheConfig{
-				Type: "ephemeral",
-			}
-		}
-
 		messages = append(messages, chatMsg)
 	}
 
@@ -191,11 +184,9 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	return &pb.LLMResponse{
 		Content: response.Content,
 		Usage: &pb.UsageInfo{
-			PromptTokens:             response.Usage.InputTokens,
-			CompletionTokens:         response.Usage.OutputTokens,
-			TotalTokens:              response.Usage.InputTokens + response.Usage.OutputTokens,
-			CacheReadInputTokens:     response.Usage.CacheReadInputTokens,
-			CacheCreationInputTokens: response.Usage.CacheCreationInputTokens,
+			PromptTokens:     response.Usage.InputTokens,
+			CompletionTokens: response.Usage.OutputTokens,
+			TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
 		},
 	}, nil
 }
@@ -230,13 +221,6 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			chatMsg := chatMessage{
 				Role:    msg.Role,
 				Content: msg.Content,
-			}
-
-			// Handle cache control if present
-			if msg.CacheControl != nil && msg.CacheControl.Type == "ephemeral" {
-				chatMsg.CacheControl = &cacheConfig{
-					Type: "ephemeral",
-				}
 			}
 
 			messages = append(messages, chatMsg)
@@ -321,9 +305,8 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			if data == "[DONE]" {
 				// Send final message with accumulated usage
 				responseChan <- &pb.LLMStreamResponse{
-					ContentChunk: "",
-					IsFinal:      true,
-					Usage:        usage,
+					Type:  pb.ResponseType_TYPE_USAGE,
+					Usage: usage,
 				}
 				return
 			}
@@ -338,11 +321,9 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			// Update usage if available
 			if streamResp.Usage != nil {
 				usage = &pb.UsageInfo{
-					PromptTokens:             streamResp.Usage.InputTokens,
-					CompletionTokens:         streamResp.Usage.OutputTokens,
-					TotalTokens:              streamResp.Usage.InputTokens + streamResp.Usage.OutputTokens,
-					CacheReadInputTokens:     streamResp.Usage.CacheReadInputTokens,
-					CacheCreationInputTokens: streamResp.Usage.CacheCreationInputTokens,
+					PromptTokens:     streamResp.Usage.InputTokens,
+					CompletionTokens: streamResp.Usage.OutputTokens,
+					TotalTokens:      streamResp.Usage.InputTokens + streamResp.Usage.OutputTokens,
 				}
 			}
 
@@ -355,17 +336,15 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 				// Send the content chunk
 				if streamResp.Content != "" {
 					responseChan <- &pb.LLMStreamResponse{
-						ContentChunk: streamResp.Content,
-						IsFinal:      false,
-						Usage:        usage,
+						Type:    pb.ResponseType_TYPE_CONTENT,
+						Content: streamResp.Content,
 					}
 				}
 			case "content_block_stop":
 				// Send final message with usage
 				responseChan <- &pb.LLMStreamResponse{
-					ContentChunk: "",
-					IsFinal:      true,
-					Usage:        usage,
+					Type:  pb.ResponseType_TYPE_USAGE,
+					Usage: usage,
 				}
 				return
 			case "error":

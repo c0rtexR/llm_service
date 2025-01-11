@@ -1,4 +1,4 @@
-package openrouter
+package openai
 
 import (
 	"bufio"
@@ -15,17 +15,17 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://openrouter.ai/api/v1"
-	defaultModel   = "openai/gpt-3.5-turbo"
+	defaultBaseURL = "https://api.openai.com/v1"
+	defaultModel   = "gpt-3.5-turbo"
 )
 
-// Provider implements the LLMProvider interface for OpenRouter
+// Provider implements the LLMProvider interface for OpenAI
 type Provider struct {
 	config     *provider.Config
 	httpClient *http.Client
 }
 
-// requestBody represents the JSON structure for OpenRouter API requests
+// requestBody represents the JSON structure for OpenAI API requests
 type requestBody struct {
 	Model       string        `json:"model"`
 	Messages    []chatMessage `json:"messages"`
@@ -35,13 +35,13 @@ type requestBody struct {
 	TopP        *float32      `json:"top_p,omitempty"`
 }
 
-// chatMessage represents a single message in the OpenRouter format
+// chatMessage represents a single message in the OpenAI format
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// responseBody represents the JSON structure for OpenRouter API responses
+// responseBody represents the JSON structure for OpenAI API responses
 type responseBody struct {
 	ID      string `json:"id"`
 	Model   string `json:"model"`
@@ -65,10 +65,10 @@ type streamResponseBody struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Delta struct {
-			Role    string `json:"role,omitempty"`
-			Content string `json:"content,omitempty"`
+			Role    string `json:"role"`
+			Content string `json:"content"`
 		} `json:"delta"`
-		FinishReason string `json:"finish_reason,omitempty"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
 		PromptTokens     int32 `json:"prompt_tokens"`
@@ -77,7 +77,7 @@ type streamResponseBody struct {
 	} `json:"usage,omitempty"`
 }
 
-// New creates a new OpenRouter provider instance
+// New creates a new OpenAI provider instance
 func New(config *provider.Config) *Provider {
 	if config.BaseURL == "" {
 		config.BaseURL = defaultBaseURL
@@ -100,7 +100,7 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 		model = p.config.DefaultModel
 	}
 
-	// Convert messages to OpenRouter format
+	// Convert messages to OpenAI format
 	messages := make([]chatMessage, len(req.Messages))
 	for i, msg := range req.Messages {
 		messages[i] = chatMessage{
@@ -199,7 +199,7 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			model = p.config.DefaultModel
 		}
 
-		// Convert messages to OpenRouter format
+		// Convert messages to OpenAI format
 		messages := make([]chatMessage, len(req.Messages))
 		for i, msg := range req.Messages {
 			messages[i] = chatMessage{
@@ -262,15 +262,13 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			return
 		}
 
-		// Create scanner for SSE stream
+		// Create scanner to read SSE stream
 		scanner := bufio.NewScanner(resp.Body)
 		var usage *pb.UsageInfo
 
+		// Read stream
 		for scanner.Scan() {
-			// Get the line
 			line := scanner.Text()
-
-			// Skip empty lines
 			if line == "" {
 				continue
 			}
@@ -279,57 +277,63 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			data := strings.TrimPrefix(line, "data: ")
+			line = strings.TrimPrefix(line, "data: ")
 
-			// Skip [DONE] message
-			if data == "[DONE]" {
-				// Send final message with accumulated usage
-				responseChan <- &pb.LLMStreamResponse{
-					Type:  pb.ResponseType_TYPE_USAGE,
-					Usage: usage,
+			// Check for stream end
+			if line == "[DONE]" {
+				if usage != nil {
+					responseChan <- &pb.LLMStreamResponse{
+						Type:  pb.ResponseType_TYPE_USAGE,
+						Usage: usage,
+					}
 				}
 				return
 			}
 
-			// Parse the SSE data
-			var streamResp streamResponseBody
-			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-				errorChan <- fmt.Errorf("failed to parse SSE data: %w", err)
+			// Parse response chunk
+			var chunk streamResponseBody
+			if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+				errorChan <- fmt.Errorf("failed to parse chunk: %w", err)
 				return
 			}
 
-			// Check if we have choices
-			if len(streamResp.Choices) == 0 {
+			// Check if we have any choices
+			if len(chunk.Choices) == 0 {
 				continue
 			}
 
-			// Update usage if available
-			if streamResp.Usage != nil {
+			// If we have usage info, save it for the final message
+			if chunk.Usage != nil {
 				usage = &pb.UsageInfo{
-					PromptTokens:     streamResp.Usage.PromptTokens,
-					CompletionTokens: streamResp.Usage.CompletionTokens,
-					TotalTokens:      streamResp.Usage.TotalTokens,
+					PromptTokens:     chunk.Usage.PromptTokens,
+					CompletionTokens: chunk.Usage.CompletionTokens,
+					TotalTokens:      chunk.Usage.TotalTokens,
 				}
+				continue
 			}
 
-			// Get the content chunk and finish reason
-			chunk := streamResp.Choices[0].Delta.Content
-			if streamResp.Choices[0].FinishReason != "" {
+			// Get content from delta
+			content := chunk.Choices[0].Delta.Content
+			if content == "" {
+				continue
+			}
+
+			// Send content chunk
+			responseChan <- &pb.LLMStreamResponse{
+				Type:    pb.ResponseType_TYPE_CONTENT,
+				Content: content,
+			}
+
+			// Check for finish reason
+			if chunk.Choices[0].FinishReason != "" {
 				responseChan <- &pb.LLMStreamResponse{
 					Type:         pb.ResponseType_TYPE_FINISH_REASON,
-					FinishReason: streamResp.Choices[0].FinishReason,
-				}
-			}
-
-			// Send non-empty chunks
-			if chunk != "" {
-				responseChan <- &pb.LLMStreamResponse{
-					Type:    pb.ResponseType_TYPE_CONTENT,
-					Content: chunk,
+					FinishReason: chunk.Choices[0].FinishReason,
 				}
 			}
 		}
 
+		// Check for scanner errors
 		if err := scanner.Err(); err != nil {
 			errorChan <- fmt.Errorf("error reading stream: %w", err)
 			return
