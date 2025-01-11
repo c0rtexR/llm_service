@@ -48,45 +48,6 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] Listen on `:50051` (or config-based port)
 - [x] Implement graceful shutdown (handle `SIGINT`, `SIGTERM`)
 
----
-
-## **Domain Layer (Optional)**
-*(Only if you plan to store usage logs or specialized domain logic. Otherwise, skip.)*
-
-- [ ] Define domain objects (e.g., `LLMCall` for logging calls or usage metrics)
-- [ ] Add validation methods (if you have custom domain constraints)
-- [ ] Create domain-specific errors
-- [ ] Write unit tests for domain objects
-- [ ] Verify domain test coverage
-
----
-
-## **Database (Optional)**
-*(Only if you need to persist logs, usage, or any metadata. Otherwise, skip.)*
-
-- [ ] Create migrations for `llm_calls` table
-  - [ ] Define columns: `id`, `provider`, `model`, `prompt`, `response`, `tokens_used`, etc.
-- [ ] Define indexes if you need fast searching or analytics
-- [ ] Setup migration runner (Flyway, golang-migrate, or similar)
-- [ ] Verify rollback handling
-- [ ] Docker Compose or Kubernetes config for migrations
-
----
-
-## **Repository Layer (Optional)**
-*(Only if storing logs/usage. Otherwise, skip.)*
-
-- [ ] Implement a PostgreSQL or other DB repository:
-  - [ ] Database connection handling
-  - [ ] CRUD or insertion methods (`InsertLLMCall`, etc.)
-  - [ ] Transaction support if needed
-- [ ] Integration tests with testcontainers:
-  - [ ] Setup test DB in Docker
-  - [ ] Insert/fetch logs
-  - [ ] Check performance with large logs
-
----
-
 ## **Provider Layer**
 
 ### **Common Provider Interface**
@@ -156,15 +117,15 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 ## **API Layer (gRPC Server)**
 
 ### **Server Implementation**
-- [ ] `LLMServer` struct with references to each `LLMProvider` 
-- [ ] `Invoke(ctx context.Context, req *LLMRequest)`:
-  - [ ] Switch on `req.Provider`, call the correct provider's `Invoke()`
-  - [ ] Return or handle error if unknown provider
-- [ ] `InvokeStream(req *LLMRequest, stream LLMService_InvokeStreamServer)`:
-  - [ ] Switch on `req.Provider`, call `InvokeStream()`
-  - [ ] Receive chunk channel, do `stream.Send(chunk)` for each
-  - [ ] On final chunk or error, terminate
-- [ ] Error handling & structured logging
+- [x] `LLMServer` struct with references to each `LLMProvider` 
+- [x] `Invoke(ctx context.Context, req *LLMRequest)`:
+  - [x] Switch on `req.Provider`, call the correct provider's `Invoke()`
+  - [x] Return or handle error if unknown provider
+- [x] `InvokeStream(req *LLMRequest, stream LLMService_InvokeStreamServer)`:
+  - [x] Switch on `req.Provider`, call `InvokeStream()`
+  - [x] Receive chunk channel, do `stream.Send(chunk)` for each
+  - [x] On final chunk or error, terminate
+- [x] Error handling & structured logging
 
 ### **Server Entry Point**
 - [ ] Confirm `main.go` registers `LLMServiceServer`
@@ -217,11 +178,11 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 ## **Testing Infrastructure**
 
 ### **Unit Tests**
-- [ ] Provider-level mocks (OpenRouter, Anthropic, OpenAI, Gemini)
-- [ ] Test `Invoke()` with valid/invalid prompts
-- [ ] Test `Invoke()` with missing env keys
-- [ ] Test error handling paths
-- [ ] High coverage for provider logic
+- [x] Provider-level mocks (OpenRouter, Anthropic, OpenAI, Gemini)
+- [x] Test `Invoke()` with valid/invalid prompts
+- [x] Test `Invoke()` with missing env keys
+- [x] Test error handling paths
+- [x] High coverage for provider logic
 
 ### **Integration Tests**
 - [ ] Spin up the gRPC server via `main.go`
