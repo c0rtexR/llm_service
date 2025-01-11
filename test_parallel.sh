@@ -1,0 +1,2 @@
+#!/bin/bash
+for i in {1..5}; do curl -X POST "https://openrouter.ai/api/v1/chat/completions" -H "Authorization: Bearer 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" -H "HTTP-Referer: https://github.com/cursor-ai" -H "X-Title: Cursor LLM Service" -H "Content-Type: application/json" -d "{\"model\": \"google/gemini-flash-1.5-8b\", \"messages\": [{\"role\": \"user\", \"content\": \"Write a one-line story about number $i.\"}]}" & done; wait

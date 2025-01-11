@@ -108,11 +108,16 @@ func TestInvokeWithCacheHit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Send response with cache hit
 		resp := responseBody{
-			ID:      "test-id",
-			Model:   "test-model",
-			Type:    "message",
-			Role:    "assistant",
-			Content: "Hello, how can I help?",
+			ID:    "test-id",
+			Model: "test-model",
+			Type:  "message",
+			Role:  "assistant",
+			Content: []contentBlock{
+				{
+					Type: "text",
+					Text: "Hello, how can I help?",
+				},
+			},
 			Usage: struct {
 				InputTokens              int32 `json:"input_tokens"`
 				OutputTokens             int32 `json:"output_tokens"`
@@ -232,8 +237,13 @@ func TestInvokeStream(t *testing.T) {
 		// Send content chunks
 		for i, chunk := range chunks {
 			resp := streamResponseBody{
-				Type:    "content_block",
-				Content: chunk,
+				Type: "content_block",
+				Content: []contentBlock{
+					{
+						Type: "text",
+						Text: chunk,
+					},
+				},
 			}
 
 			// Add usage info to last chunk
@@ -339,8 +349,13 @@ func TestInvokeStreamError(t *testing.T) {
 
 		// Send error event
 		resp := streamResponseBody{
-			Type:    "error",
-			Content: "Rate limit exceeded",
+			Type: "error",
+			Content: []contentBlock{
+				{
+					Type: "text",
+					Text: "Rate limit exceeded",
+				},
+			},
 		}
 		data, err := json.Marshal(resp)
 		require.NoError(t, err)

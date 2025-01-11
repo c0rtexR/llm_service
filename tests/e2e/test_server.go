@@ -38,7 +38,15 @@ func setupOpenRouterTestServer(t *testing.T) *openrouterTestServer {
 	})
 
 	// Create gRPC server
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.InitialWindowSize(1<<20),     // 1MB window size
+		grpc.InitialConnWindowSize(1<<20), // 1MB connection window
+		grpc.MaxConcurrentStreams(100),    // Allow more concurrent streams
+		grpc.WriteBufferSize(64*1024),     // 64KB buffer
+		grpc.ReadBufferSize(64*1024),      // 64KB buffer
+		grpc.MaxRecvMsgSize(4*1024*1024),  // 4MB max message size
+		grpc.MaxSendMsgSize(4*1024*1024),  // 4MB max message size
+	)
 	llmServer := server.New(map[string]provider.LLMProvider{
 		"openrouter": p,
 	})
@@ -58,7 +66,16 @@ func setupOpenRouterTestServer(t *testing.T) *openrouterTestServer {
 
 	// Create client connection
 	conn, err := grpc.Dial(listener.Addr().String(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithInitialWindowSize(1<<20),     // 1MB window size
+		grpc.WithInitialConnWindowSize(1<<20), // 1MB connection window
+		grpc.WithWriteBufferSize(64*1024),     // 64KB buffer
+		grpc.WithReadBufferSize(64*1024),      // 64KB buffer
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(4*1024*1024), // 4MB max message size
+			grpc.MaxCallSendMsgSize(4*1024*1024), // 4MB max message size
+		),
+	)
 	require.NoError(t, err)
 
 	client := pb.NewLLMServiceClient(conn)
