@@ -61,3 +61,27 @@
 - [ ] Add API documentation
 - [ ] Add setup instructions
 - [ ] Add usage examples 
+
+### **E2E Tests**  
+*(Nothing is implemented yet; these are your final thorough scenarios.)*
+
+1. **Basic Single Call**
+   - [x] Setup: Start the gRPC server
+   - [x] Execution: `Invoke` with a small prompt on `openrouter`
+   - [x] Verification: Confirm a valid `LLMResponse.content` is returned
+
+2. **Simple Streamed Call**
+   - [x] Setup: `InvokeStream` with a short prompt on `openai`
+   - [x] Execution: Read partial tokens until the final chunk
+   - [x] Verification: Ensure correct ordering of chunks; `is_final == true` at end
+
+3. **Anthropic Ephemeral Caching – Single Block**
+   - [x] Setup: Create a large system message with `cache_control.type = "ephemeral"`
+   - [x] Execution 1: Call `Invoke` with that block
+   - [x] Execution 2: Repeat the exact block within 5 minutes
+   - [x] Verification: Confirm usage or logs show a cache hit (faster or cheaper)
+
+4. **Anthropic Ephemeral Caching – Multiple Blocks**
+   - [x] Setup: Mark multiple `ChatMessage`s with ephemeral cache
+   - [x] Execution: Re-send them identically
+   - [x] Verification: Confirm each ephemeral block is recognized; partial changes cause new caches 
