@@ -137,41 +137,41 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 ## **Deployment & Configuration**
 
 ### **Docker & Docker Compose**
-- [ ] Create a multi-stage **Dockerfile**:
-  - [ ] Build stage with Go 1.23.4
-  - [ ] Final minimal stage
-- [ ] Optional `docker-compose.yaml`:
-  - [ ] Define `llmservice` container
-  - [ ] Possibly define a local Postgres for usage logs
-  - [ ] Check health checks
-- [ ] Verify container runs and gRPC is accessible
+- [x] Create a multi-stage **Dockerfile**:
+  - [x] Build stage with Go 1.23.4
+  - [x] Final minimal stage
+- [x] Optional `docker-compose.yaml`:
+  - [x] Define `llmservice` container
+  - [x] Possibly define a local Postgres for usage logs
+  - [x] Check health checks
+- [x] Verify container runs and gRPC is accessible
 
 ### **Environment Configuration**
-- [ ] Create a config struct for timeouts, concurrency, default models
-- [ ] Load from env or config file
-- [ ] Validate mandatory keys at startup
-- [ ] Add logging for missing optional keys
+- [x] Create a config struct for timeouts, concurrency, default models
+- [x] Load from env or config file
+- [x] Validate mandatory keys at startup
+- [x] Add logging for missing optional keys
 
 ### **Logging Setup**
-- [ ] Integrate structured logger (Zap or Logrus)
-- [ ] Configure log levels via env
-- [ ] Log request/response metadata (provider, model, etc.)
-- [ ] Add correlation IDs or request IDs if needed
-- [ ] Check error logs for stack traces
+- [x] Integrate structured logger (Zap or Logrus)
+- [x] Configure log levels via env
+- [x] Log request/response metadata (provider, model, etc.)
+- [x] Add correlation IDs or request IDs if needed
+- [x] Check error logs for stack traces
 
 ### **Metrics & Observability**
-- [ ] Add Prometheus metrics (requests per provider, success/fail counts)
-- [ ] Track streaming concurrency
-- [ ] Potential distributed tracing (OpenTelemetry)
-- [ ] gRPC reflection for debugging
+- [x] Add Prometheus metrics (requests per provider, success/fail counts)
+- [x] Track streaming concurrency
+- [x] Potential distributed tracing (OpenTelemetry)
+- [x] gRPC reflection for debugging
 
 ### **CI/CD Pipeline**
-- [ ] GitHub Actions or equivalent:
-  - [ ] Build step
-  - [ ] Run unit tests
-  - [ ] Run integration tests
-  - [ ] Publish Docker image
-  - [ ] Deploy to staging environment
+- [x] GitHub Actions or equivalent:
+  - [x] Build step
+  - [x] Run unit tests
+  - [x] Run integration tests
+  - [x] Publish Docker image
+  - [x] Deploy to staging environment
 
 ---
 

@@ -1,0 +1,33 @@
+# Environment variables
+.env
+
+# Binary files
+bin/
+llm-service
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dependency directories
+vendor/
+
+# Test files
+*.test
+coverage.out
+
+# Build files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Log files
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db 
