@@ -90,9 +90,11 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 ## **Provider Layer**
 
 ### **Common Provider Interface**
-- [ ] Define `LLMProvider` interface with:
-  - [ ] `Invoke(ctx context.Context, req *LLMRequest) (*LLMResponse, error)`
-  - [ ] `InvokeStream(ctx context.Context, req *LLMRequest) (<-chan *LLMStreamResponse, <-chan error)`
+- [x] Define `LLMProvider` interface with:
+  - [x] `Invoke(ctx context.Context, req *LLMRequest) (*LLMResponse, error)`
+  - [x] `InvokeStream(ctx context.Context, req *LLMRequest) (<-chan *LLMStreamResponse, <-chan error)`
+- [x] Create provider configuration structure
+- [x] Add tests for provider configuration
 
 ### **OpenRouter Provider**
 - [ ] Implement `Invoke()`:
