@@ -60,7 +60,16 @@
 ## End-to-End Testing
 - [x] Create integration tests for Gemini provider
 - [x] Create integration tests for OpenRouter provider
-- [ ] Create integration tests for other providers
+- [x] Create integration tests for OpenAI provider
+  - [x] Basic call test
+  - [x] Streaming test
+  - [x] Chat history test
+  - [x] Parallel streaming test
+  - [x] Large prompt test
+  - [x] Model parameters test
+  - [x] Invalid model test
+  - [x] Usage info test
+- [ ] Create integration tests for Anthropic provider
 - [ ] Add performance tests
 - [ ] Add load tests
 

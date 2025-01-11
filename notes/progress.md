@@ -192,11 +192,11 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] Concurrency checks (multiple calls at once)
 
 ### **E2E Tests**  
-*(Gemini and OpenRouter providers implemented, others pending)*
+*(Gemini, OpenRouter, and OpenAI providers implemented, Anthropic pending)*
 
 1. **Basic Single Call**
-   - [x] Setup: Start the gRPC server with providers
-   - [x] Execution: `Invoke` with a small prompt
+   - [x] Setup: Start the gRPC server
+   - [x] Execution: `Invoke` with a small prompt on Gemini/OpenRouter/OpenAI
    - [x] Verification: Confirm a valid response is returned
 
 2. **Simple Streamed Call**
@@ -215,9 +215,9 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
    - [x] Verification: All streams complete successfully
 
 5. **Large Prompt Handling**
-   - [x] Setup: Send large prompts (~100KB)
-   - [x] Execution: Test with streaming enabled
-   - [x] Verification: Proper handling or graceful errors
+   - [x] Setup: Send large prompts
+   - [x] Execution: Test with ~100KB of text
+   - [x] Verification: Proper handling of large inputs
 
 6. **Model Parameters**
    - [x] Setup: Test different model parameters
@@ -227,12 +227,13 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 7. **Error Handling**
    - [x] Setup: Test invalid configurations
    - [x] Execution: Send invalid model names
-   - [x] Verification: Proper error responses
+   - [x] Verification: Proper error responses 
 
-8. **OpenAI Integration** (Pending)
-   - [ ] Setup: Configure OpenAI provider
-   - [ ] Basic and streaming tests
-   - [ ] Error handling verification
+8. **OpenAI Integration** (Completed)
+   - [x] Setup: Configure OpenAI provider
+   - [x] Basic and streaming tests
+   - [x] Error handling verification
+   - [x] Usage information tests
 
 9. **Anthropic Integration** (Pending)
    - [ ] Setup: Configure Anthropic provider
