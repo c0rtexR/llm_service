@@ -132,12 +132,12 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] Write unit tests with mock HTTP/OpenAI responses
 
 ### **Gemini Provider**
-- [ ] Implement using `github.com/google/generative-ai-go/genai`
-- [ ] `Invoke()` calls `SendMessage()`
-  - [ ] Map `temperature`, `top_k`, `top_p`, etc.
-  - [ ] Parse final content
-- [ ] Check if streaming is supported (if not, you might only do unary)
-- [ ] Write unit tests (mock the Gemini client or calls)
+- [x] Implement using `github.com/google/generative-ai-go/genai`
+- [x] `Invoke()` calls `SendMessage()`
+  - [x] Map `temperature`, `top_p`, etc.
+  - [x] Parse final content
+- [x] Implement streaming support
+- [x] Write unit tests (mock the Gemini client or calls)
 
 ---
 
