@@ -185,11 +185,11 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] High coverage for provider logic
 
 ### **Integration Tests**
-- [ ] Spin up the gRPC server via `main.go`
-- [ ] Make real gRPC calls to `Invoke` or `InvokeStream`
-- [ ] Optionally call external providers with small test prompts (watch cost)
-- [ ] If using DB, test DB logs insertion/retrieval
-- [ ] Concurrency checks (multiple calls at once)
+- [x] Spin up the gRPC server via `main.go`
+- [x] Make real gRPC calls to `Invoke` or `InvokeStream`
+- [x] Optionally call external providers with small test prompts (watch cost)
+- [x] If using DB, test DB logs insertion/retrieval
+- [x] Concurrency checks (multiple calls at once)
 
 ### **E2E Tests**  
 *(Nothing is implemented yet; these are your final thorough scenarios.)*
