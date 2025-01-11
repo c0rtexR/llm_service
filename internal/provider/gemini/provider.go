@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
 	"llmservice/internal/provider"
@@ -30,7 +31,7 @@ func New(config *provider.Config) (*Provider, error) {
 
 	defaultModel := config.DefaultModel
 	if defaultModel == "" {
-		defaultModel = "gemini-pro" // Default to gemini-pro if not specified
+		defaultModel = "gemini-1.5-flash-8b" // Default to gemini-1.5-flash-8b
 	}
 
 	return &Provider{
@@ -51,6 +52,13 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	if req.TopP != 0 {
 		model.SetTopP(float32(req.TopP))
 	}
+	if req.TopK != 0 {
+		model.SetTopK(int32(req.TopK))
+	}
+	if req.MaxTokens != 0 {
+		model.SetMaxOutputTokens(int32(req.MaxTokens))
+	}
+	model.ResponseMIMEType = "text/plain"
 
 	// Convert messages to Gemini format
 	prompt := ""
@@ -108,25 +116,33 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		if req.TopP != 0 {
 			model.SetTopP(float32(req.TopP))
 		}
+		if req.TopK != 0 {
+			model.SetTopK(int32(req.TopK))
+		}
+		if req.MaxTokens != 0 {
+			model.SetMaxOutputTokens(int32(req.MaxTokens))
+		}
+		model.ResponseMIMEType = "text/plain"
 
 		// Convert messages to Gemini format
 		prompt := ""
 		for _, msg := range req.Messages {
 			if msg.Role == "system" {
+				// Gemini doesn't support system messages directly, prepend to user message
 				prompt += msg.Content + "\n"
 			} else if msg.Role == "user" {
 				prompt += msg.Content
 			}
+			// Skip assistant messages as they're not needed for the prompt
 		}
 
+		// Start the streaming session
 		iter := model.GenerateContentStream(ctx, genai.Text(prompt))
+
+		// Process the stream
 		for {
 			resp, err := iter.Next()
-			if err != nil {
-				errorChan <- fmt.Errorf("gemini: stream failed: %w", err)
-				return
-			}
-			if resp == nil {
+			if err == iterator.Done {
 				// End of stream
 				responseChan <- &pb.LLMStreamResponse{
 					Type:         pb.ResponseType_TYPE_FINISH_REASON,
@@ -134,22 +150,21 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 				}
 				return
 			}
-
-			if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-				continue // Skip empty responses
+			if err != nil {
+				errorChan <- fmt.Errorf("gemini: stream failed: %w", err)
+				return
 			}
 
-			// Extract the chunk text
-			chunk := ""
-			for _, part := range resp.Candidates[0].Content.Parts {
-				if text, ok := part.(genai.Text); ok {
-					chunk += string(text)
+			// Process each candidate's content parts
+			for _, candidate := range resp.Candidates {
+				for _, part := range candidate.Content.Parts {
+					if text, ok := part.(genai.Text); ok && len(text) > 0 {
+						responseChan <- &pb.LLMStreamResponse{
+							Type:    pb.ResponseType_TYPE_CONTENT,
+							Content: string(text),
+						}
+					}
 				}
-			}
-
-			responseChan <- &pb.LLMStreamResponse{
-				Type:    pb.ResponseType_TYPE_CONTENT,
-				Content: chunk,
 			}
 		}
 	}()

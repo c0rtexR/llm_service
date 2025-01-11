@@ -35,6 +35,9 @@ message LLMRequest {
   
   // CacheControl specifies caching behavior
   CacheControl cache_control = 7;
+
+  // TopK controls diversity by limiting to k most likely tokens
+  int32 top_k = 8;
 }
 
 // ChatMessage represents a single message in the conversation

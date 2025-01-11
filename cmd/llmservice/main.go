@@ -76,7 +76,7 @@ func main() {
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
 		p, err := gemini.New(&provider.Config{
 			APIKey:       key,
-			DefaultModel: "gemini-pro", // Default model for Gemini
+			DefaultModel: "gemini-1.5-flash-8b", // Updated to match your model
 		})
 		if err != nil {
 			logger.Fatal("failed to initialize Gemini provider", zap.Error(err))
@@ -95,6 +95,15 @@ func main() {
 	// Register LLM service
 	llmServer := server.New(providers)
 	pb.RegisterLLMServiceServer(grpcServer, llmServer)
+
+	// Print registered providers
+	logger.Info("registered providers", zap.Strings("providers", func() []string {
+		var names []string
+		for name := range providers {
+			names = append(names, name)
+		}
+		return names
+	}()))
 
 	// Enable reflection for development tools
 	reflection.Register(grpcServer)

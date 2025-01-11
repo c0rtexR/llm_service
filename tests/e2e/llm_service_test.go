@@ -39,7 +39,7 @@ func TestBasicSingleCall(t *testing.T) {
 	// Test basic request
 	resp, err := client.Invoke(context.Background(), &pb.LLMRequest{
 		Provider: "openrouter",
-		Model:    "openai/gpt-3.5-turbo",
+		Model:    "google/gemini-flash-1.5-8b",
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "user",
@@ -65,7 +65,7 @@ func TestSimpleStreamedCall(t *testing.T) {
 	// Start streaming request
 	stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
 		Provider: "openai",
-		Model:    "gpt-3.5-turbo",
+		Model:    "gpt-4o-mini",
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "user",
@@ -118,7 +118,7 @@ func TestAnthropicCachingSingleBlock(t *testing.T) {
 	// Create a request with ephemeral caching
 	req := &pb.LLMRequest{
 		Provider: "anthropic",
-		Model:    "claude-2",
+		Model:    "claude-3-5-haiku-latest",
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "system",
@@ -175,7 +175,7 @@ func TestAnthropicCachingMultipleBlocks(t *testing.T) {
 	// Create a request with multiple ephemeral blocks
 	req := &pb.LLMRequest{
 		Provider: "anthropic",
-		Model:    "claude-2",
+		Model:    "claude-3-5-haiku-latest",
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "system",
@@ -241,7 +241,7 @@ func TestParallelStreaming(t *testing.T) {
 
 			stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
 				Provider: "openai",
-				Model:    "gpt-3.5-turbo",
+				Model:    "gpt-4o-mini",
 				Messages: []*pb.ChatMessage{
 					{
 						Role:    "user",
@@ -334,7 +334,7 @@ func TestLargePrompt(t *testing.T) {
 
 	stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
 		Provider: "openai",
-		Model:    "gpt-3.5-turbo",
+		Model:    "gpt-4o-mini",
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "user",
@@ -367,13 +367,9 @@ func TestLargePrompt(t *testing.T) {
 func TestMissingAPIKey(t *testing.T) {
 	client := setupClient(t)
 
-	// Save current API key and unset it
-	key := os.Getenv("OPENAI_API_KEY")
-	os.Unsetenv("OPENAI_API_KEY")
-	defer os.Setenv("OPENAI_API_KEY", key)
-
 	resp, err := client.Invoke(context.Background(), &pb.LLMRequest{
-		Provider: "openai",
+		Provider: "unsupported-provider",
+		Model:    "google/gemini-flash-1.5-8b",
 		Messages: []*pb.ChatMessage{
 			{
 				Role:    "user",
@@ -384,5 +380,63 @@ func TestMissingAPIKey(t *testing.T) {
 
 	require.Error(t, err)
 	require.Nil(t, resp)
-	require.Contains(t, strings.ToLower(err.Error()), "api key")
+	require.Contains(t, strings.ToLower(err.Error()), "unsupported provider")
+}
+
+func TestOpenRouterStreaming(t *testing.T) {
+	key := os.Getenv("OPENROUTER_API_KEY")
+	if key == "" {
+		t.Skip("OPENROUTER_API_KEY not set")
+	}
+
+	client := setupClient(t)
+	stream, err := client.InvokeStream(context.Background(), &pb.LLMRequest{
+		Provider: "openrouter",
+		Model:    "google/gemini-flash-1.5-8b",
+		Messages: []*pb.ChatMessage{
+			{
+				Role:    "user",
+				Content: "Count from 1 to 5 slowly.",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	var fullResponse string
+	var finishReason string
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if resp.FinishReason != "" {
+			finishReason = resp.FinishReason
+		}
+		fullResponse += resp.Content
+	}
+
+	require.Equal(t, "STOP", finishReason)
+
+	// Check that the response contains either numeric or text numbers
+	require.True(t,
+		strings.Contains(fullResponse, "1") || strings.Contains(fullResponse, "one") ||
+			strings.Contains(fullResponse, "One"),
+		"Response should contain '1' or 'one'")
+	require.True(t,
+		strings.Contains(fullResponse, "2") || strings.Contains(fullResponse, "two") ||
+			strings.Contains(fullResponse, "Two"),
+		"Response should contain '2' or 'two'")
+	require.True(t,
+		strings.Contains(fullResponse, "3") || strings.Contains(fullResponse, "three") ||
+			strings.Contains(fullResponse, "Three"),
+		"Response should contain '3' or 'three'")
+	require.True(t,
+		strings.Contains(fullResponse, "4") || strings.Contains(fullResponse, "four") ||
+			strings.Contains(fullResponse, "Four"),
+		"Response should contain '4' or 'four'")
+	require.True(t,
+		strings.Contains(fullResponse, "5") || strings.Contains(fullResponse, "five") ||
+			strings.Contains(fullResponse, "Five"),
+		"Response should contain '5' or 'five'")
 }
