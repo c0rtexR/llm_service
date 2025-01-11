@@ -110,24 +110,24 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] Write unit tests with mock HTTP
 
 ### **Anthropic Provider**
-- [ ] Implement `Invoke()`:
-  - [ ] Create JSON structure with `system[]` and `messages[]`
-  - [ ] Attach `"cache_control": {"type":"ephemeral"}` if `ChatMessage.cache_control.type=="ephemeral"`
-  - [ ] Set `"x-api-key": "$ANTHROPIC_API_KEY"` and `"anthropic-version"`
-  - [ ] Parse completion and usage fields
+- [x] Implement `Invoke()`:
+  - [x] Create JSON structure with `system[]` and `messages[]`
+  - [x] Attach `"cache_control": {"type":"ephemeral"}` if `ChatMessage.cache_control.type=="ephemeral"`
+  - [x] Set `"x-api-key": "$ANTHROPIC_API_KEY"` and `"anthropic-version"`
+  - [x] Parse completion and usage fields
 - [ ] Implement `InvokeStream()` (SSE-based):
   - [ ] If `enable_stream` is true, add `"stream": true`
   - [ ] Parse SSE for partial tokens
   - [ ] Map each chunk to `LLMStreamResponse`
-- [ ] Ephemeral caching logic:
-  - [ ] For large blocks with `cache_control`, forward unchanged text to get a cache hit
-  - [ ] Check usage fields for `cache_creation_input_tokens` or `cache_read_input_tokens`
-- [ ] Unit tests with mocked Anthropic SSE
+- [x] Ephemeral caching logic:
+  - [x] For large blocks with `cache_control`, forward unchanged text to get a cache hit
+  - [x] Check usage fields for `cache_creation_input_tokens` or `cache_read_input_tokens`
+- [x] Unit tests with mocked Anthropic SSE
 
 ### **OpenAI Provider**
 - [ ] Implement `Invoke()`:
   - [ ] `POST https://api.openai.com/v1/chat/completions`
-  - [ ] Map `messages` to OpenAI’s format
+  - [ ] Map `messages` to OpenAI's format
   - [ ] Use `"Authorization": "Bearer $OPENAI_API_KEY"`
   - [ ] Parse `choices[0].message.content`
 - [ ] Implement `InvokeStream()`:
@@ -165,7 +165,7 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 ### **Server Implementation**
 - [ ] `LLMServer` struct with references to each `LLMProvider` 
 - [ ] `Invoke(ctx context.Context, req *LLMRequest)`:
-  - [ ] Switch on `req.Provider`, call the correct provider’s `Invoke()`
+  - [ ] Switch on `req.Provider`, call the correct provider's `Invoke()`
   - [ ] Return or handle error if unknown provider
 - [ ] `InvokeStream(req *LLMRequest, stream LLMService_InvokeStreamServer)`:
   - [ ] Switch on `req.Provider`, call `InvokeStream()`
@@ -312,4 +312,4 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 
 ---
 
-**Use this checklist as your central “to-do” board**, marking `[x]` next to tasks as you complete them. By following each step, you’ll ensure the LLM Service meets the core requirements (multiple providers, gRPC streaming, ephemeral caching) and is robustly tested at all levels (unit, integration, E2E).
+**Use this checklist as your central "to-do" board**, marking `[x]` next to tasks as you complete them. By following each step, you'll ensure the LLM Service meets the core requirements (multiple providers, gRPC streaming, ephemeral caching) and is robustly tested at all levels (unit, integration, E2E).
