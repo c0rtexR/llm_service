@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package llm.v1;
+
+option go_package = "llmservice/proto/llm/v1;llmpb";
+
+// LLMRequest represents a request to an LLM provider
+message LLMRequest {
+  // The provider to use (e.g., "openrouter", "anthropic", "openai", "gemini")
+  string provider = 1;
+  
+  // The model to use (e.g., "gpt-4", "claude-2", etc.)
+  string model = 2;
+  
+  // The messages to send to the LLM
+  repeated ChatMessage messages = 3;
+  
+  // Whether to enable streaming of responses
+  bool enable_stream = 4;
+  
+  // Whether to enable caching (if supported by provider)
+  bool enable_cache = 5;
+  
+  // Optional parameters for model tuning
+  float temperature = 6;
+  int32 max_tokens = 7;
+  float top_p = 8;
+}
+
+// ChatMessage represents a single message in the conversation
+message ChatMessage {
+  // The role of the message sender (e.g., "system", "user", "assistant")
+  string role = 1;
+  
+  // The content of the message
+  string content = 2;
+  
+  // Optional cache control settings
+  CacheControl cache_control = 3;
+}
+
+// CacheControl specifies caching behavior for a message
+message CacheControl {
+  // The type of caching to use (e.g., "ephemeral")
+  string type = 1;
+}
+
+// LLMResponse represents a final response from an LLM
+message LLMResponse {
+  // The generated content
+  string content = 1;
+  
+  // Usage statistics
+  UsageInfo usage = 2;
+}
+
+// LLMStreamResponse represents a streaming chunk of the response
+message LLMStreamResponse {
+  // The chunk of content
+  string content_chunk = 1;
+  
+  // Whether this is the final chunk
+  bool is_final = 2;
+  
+  // Usage statistics (may be partial/cumulative depending on provider)
+  UsageInfo usage = 3;
+}
+
+// UsageInfo contains token usage statistics
+message UsageInfo {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+  // Specific to Anthropic's cache
+  int32 cache_read_input_tokens = 4;
+  int32 cache_creation_input_tokens = 5;
+}
+
+// LLMService provides methods to interact with LLM providers
+service LLMService {
+  // Invoke sends a request to an LLM and returns a single response
+  rpc Invoke(LLMRequest) returns (LLMResponse) {}
+  
+  // InvokeStream sends a request to an LLM and returns a stream of responses
+  rpc InvokeStream(LLMRequest) returns (stream LLMStreamResponse) {}
+} 
