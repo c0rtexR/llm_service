@@ -57,7 +57,7 @@ func TestProvider_Invoke(t *testing.T) {
 
 	p, err := New(&provider.Config{
 		APIKey:       apiKey,
-		DefaultModel: "gemini-pro",
+		DefaultModel: "gemini-1.5-flash-8b",
 	})
 	require.NoError(t, err)
 
@@ -96,6 +96,26 @@ func TestProvider_Invoke(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "with chat history",
+			request: &pb.LLMRequest{
+				Messages: []*pb.ChatMessage{
+					{
+						Role:    "user",
+						Content: "What is 2+2?",
+					},
+					{
+						Role:    "assistant",
+						Content: "2+2 equals 4",
+					},
+					{
+						Role:    "user",
+						Content: "What did I ask you?",
+					},
+				},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -121,7 +141,7 @@ func TestProvider_InvokeStream(t *testing.T) {
 
 	p, err := New(&provider.Config{
 		APIKey:       apiKey,
-		DefaultModel: "gemini-pro",
+		DefaultModel: "gemini-1.5-flash-8b",
 	})
 	require.NoError(t, err)
 
@@ -141,6 +161,26 @@ func TestProvider_InvokeStream(t *testing.T) {
 				},
 				Temperature: 0.7,
 				TopP:        0.9,
+			},
+			expectError: false,
+		},
+		{
+			name: "stream with chat history",
+			request: &pb.LLMRequest{
+				Messages: []*pb.ChatMessage{
+					{
+						Role:    "user",
+						Content: "Let's count numbers.",
+					},
+					{
+						Role:    "assistant",
+						Content: "Sure, I can help you count numbers!",
+					},
+					{
+						Role:    "user",
+						Content: "Count from 1 to 5 slowly",
+					},
+				},
 			},
 			expectError: false,
 		},

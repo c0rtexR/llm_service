@@ -60,19 +60,32 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	}
 	model.ResponseMIMEType = "text/plain"
 
-	// Convert messages to Gemini format
-	prompt := ""
+	// Start a chat session
+	session := model.StartChat()
+
+	// Convert messages to Gemini format and add to history
 	for _, msg := range req.Messages {
-		if msg.Role == "system" {
-			// Gemini doesn't support system messages directly, prepend to user message
-			prompt += msg.Content + "\n"
-		} else if msg.Role == "user" {
-			prompt += msg.Content
+		content := &genai.Content{}
+
+		switch msg.Role {
+		case "user":
+			content.Role = "user"
+			content.Parts = []genai.Part{genai.Text(msg.Content)}
+		case "assistant":
+			content.Role = "model"
+			content.Parts = []genai.Part{genai.Text(msg.Content)}
+		case "system":
+			// For system messages, we'll add them as user messages since Gemini doesn't support system
+			content.Role = "user"
+			content.Parts = []genai.Part{genai.Text(msg.Content)}
 		}
-		// Skip assistant messages as they're not needed for the prompt
+
+		session.History = append(session.History, content)
 	}
 
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	// Get the last user message to send
+	lastMsg := req.Messages[len(req.Messages)-1]
+	resp, err := session.SendMessage(ctx, genai.Text(lastMsg.Content))
 	if err != nil {
 		return nil, fmt.Errorf("gemini: generate failed: %w", err)
 	}
@@ -124,20 +137,32 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		}
 		model.ResponseMIMEType = "text/plain"
 
-		// Convert messages to Gemini format
-		prompt := ""
+		// Start a chat session
+		session := model.StartChat()
+
+		// Convert messages to Gemini format and add to history
 		for _, msg := range req.Messages {
-			if msg.Role == "system" {
-				// Gemini doesn't support system messages directly, prepend to user message
-				prompt += msg.Content + "\n"
-			} else if msg.Role == "user" {
-				prompt += msg.Content
+			content := &genai.Content{}
+
+			switch msg.Role {
+			case "user":
+				content.Role = "user"
+				content.Parts = []genai.Part{genai.Text(msg.Content)}
+			case "assistant":
+				content.Role = "model"
+				content.Parts = []genai.Part{genai.Text(msg.Content)}
+			case "system":
+				// For system messages, we'll add them as user messages since Gemini doesn't support system
+				content.Role = "user"
+				content.Parts = []genai.Part{genai.Text(msg.Content)}
 			}
-			// Skip assistant messages as they're not needed for the prompt
+
+			session.History = append(session.History, content)
 		}
 
-		// Start the streaming session
-		iter := model.GenerateContentStream(ctx, genai.Text(prompt))
+		// Get the last user message to send
+		lastMsg := req.Messages[len(req.Messages)-1]
+		iter := session.SendMessageStream(ctx, genai.Text(lastMsg.Content))
 
 		// Process the stream
 		for {
