@@ -97,17 +97,17 @@ Below is a **comprehensive, very specific task list** for implementing the **LLM
 - [x] Add tests for provider configuration
 
 ### **OpenRouter Provider**
-- [ ] Implement `Invoke()`:
-  - [ ] Build JSON payload (`model`, `messages`, etc.)
-  - [ ] Set `"Authorization": "Bearer $OPENROUTER_API_KEY"`
-  - [ ] Parse response for `content`
+- [x] Implement `Invoke()`:
+  - [x] Build JSON payload (`model`, `messages`, etc.)
+  - [x] Set `"Authorization": "Bearer $OPENROUTER_API_KEY"`
+  - [x] Parse response for `content`
 - [ ] Implement `InvokeStream()`:
   - [ ] Send `"stream": true` if needed
   - [ ] Parse SSE line-by-line
   - [ ] Convert partial messages to `LLMStreamResponse`
-- [ ] Handle optional fields (temperature, top_p, etc.) if supported
-- [ ] Ignore `cache_control` if not used by OpenRouter
-- [ ] Write unit tests with mock HTTP
+- [x] Handle optional fields (temperature, top_p, etc.) if supported
+- [x] Ignore `cache_control` if not used by OpenRouter
+- [x] Write unit tests with mock HTTP
 
 ### **Anthropic Provider**
 - [ ] Implement `Invoke()`:
