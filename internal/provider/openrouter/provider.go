@@ -39,6 +39,9 @@ var defaultTransport = &http.Transport{
 	TLSHandshakeTimeout:   10 * time.Second,
 	ExpectContinueTimeout: 1 * time.Second,
 	MaxIdleConnsPerHost:   10,
+	ReadBufferSize:        64 * 1024,
+	WriteBufferSize:       64 * 1024,
+	DisableCompression:    true,
 }
 
 // requestBody represents the JSON structure for OpenRouter API requests
@@ -91,6 +94,133 @@ type streamResponseBody struct {
 		CompletionTokens int32 `json:"completion_tokens"`
 		TotalTokens      int32 `json:"total_tokens"`
 	} `json:"usage,omitempty"`
+}
+
+// streamProcessor handles the SSE stream processing
+type streamProcessor struct {
+	reader       *bufio.Reader
+	responseChan chan<- *pb.LLMStreamResponse
+	errorChan    chan<- error
+	ctx          context.Context
+}
+
+func newStreamProcessor(ctx context.Context, body io.Reader, responseChan chan<- *pb.LLMStreamResponse, errorChan chan<- error) *streamProcessor {
+	return &streamProcessor{
+		reader:       bufio.NewReaderSize(body, 64*1024),
+		responseChan: responseChan,
+		errorChan:    errorChan,
+		ctx:          ctx,
+	}
+}
+
+func (sp *streamProcessor) process() {
+	var usage *pb.UsageInfo
+	dataChan := make(chan string, 100)
+	errChan := make(chan error, 1)
+
+	// Start reading goroutine
+	go func() {
+		defer close(dataChan)
+		defer close(errChan)
+
+		for {
+			select {
+			case <-sp.ctx.Done():
+				return
+			default:
+				line, err := sp.reader.ReadString('\n')
+				if err != nil {
+					if err != io.EOF {
+						errChan <- fmt.Errorf("error reading stream: %w", err)
+					}
+					return
+				}
+
+				select {
+				case dataChan <- line:
+				case <-sp.ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	// Process data
+	for {
+		select {
+		case <-sp.ctx.Done():
+			return
+		case err := <-errChan:
+			if err != nil {
+				sp.errorChan <- err
+			}
+			return
+		case line, ok := <-dataChan:
+			if !ok {
+				return
+			}
+
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				if usage != nil {
+					sp.sendResponse(&pb.LLMStreamResponse{
+						Type:  pb.ResponseType_TYPE_USAGE,
+						Usage: usage,
+					})
+				}
+				return
+			}
+
+			var streamResp streamResponseBody
+			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
+				sp.errorChan <- fmt.Errorf("failed to parse SSE data: %w", err)
+				return
+			}
+
+			if len(streamResp.Choices) == 0 {
+				continue
+			}
+
+			if streamResp.Usage != nil {
+				usage = &pb.UsageInfo{
+					PromptTokens:     streamResp.Usage.PromptTokens,
+					CompletionTokens: streamResp.Usage.CompletionTokens,
+					TotalTokens:      streamResp.Usage.TotalTokens,
+				}
+			}
+
+			chunk := streamResp.Choices[0].Delta.Content
+			if streamResp.Choices[0].FinishReason != "" {
+				sp.sendResponse(&pb.LLMStreamResponse{
+					Type:         pb.ResponseType_TYPE_FINISH_REASON,
+					FinishReason: streamResp.Choices[0].FinishReason,
+				})
+			}
+
+			if chunk != "" {
+				sp.sendResponse(&pb.LLMStreamResponse{
+					Type:    pb.ResponseType_TYPE_CONTENT,
+					Content: chunk,
+				})
+			}
+		}
+	}
+}
+
+func (sp *streamProcessor) sendResponse(resp *pb.LLMStreamResponse) {
+	select {
+	case sp.responseChan <- resp:
+	case <-sp.ctx.Done():
+	}
 }
 
 // New creates a new OpenRouter provider instance
@@ -207,12 +337,16 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 
 // InvokeStream implements the LLMProvider interface for streaming requests
 func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan *pb.LLMStreamResponse, <-chan error) {
-	responseChan := make(chan *pb.LLMStreamResponse, 100) // Buffered channel for better performance
+	responseChan := make(chan *pb.LLMStreamResponse, 1000)
 	errorChan := make(chan error, 1)
 
 	go func() {
 		defer close(responseChan)
 		defer close(errorChan)
+
+		// Create a context with timeout
+		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
 
 		// Use model from request or fall back to default
 		model := req.Model
@@ -220,13 +354,13 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			model = p.config.DefaultModel
 		}
 
-		// Convert messages to OpenRouter format
-		messages := make([]chatMessage, len(req.Messages))
-		for i, msg := range req.Messages {
-			messages[i] = chatMessage{
+		// Pre-allocate messages slice with capacity
+		messages := make([]chatMessage, 0, len(req.Messages))
+		for _, msg := range req.Messages {
+			messages = append(messages, chatMessage{
 				Role:    msg.Role,
 				Content: msg.Content,
-			}
+			})
 		}
 
 		// Prepare request body
@@ -254,10 +388,10 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			return
 		}
 
-		// Create HTTP request
+		// Create HTTP request with optimized buffer
 		httpReq, err := http.NewRequestWithContext(ctx, "POST",
 			fmt.Sprintf("%s/chat/completions", p.config.BaseURL),
-			bytes.NewReader(jsonBody))
+			bytes.NewBuffer(jsonBody))
 		if err != nil {
 			errorChan <- fmt.Errorf("failed to create request: %w", err)
 			return
@@ -270,9 +404,15 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		httpReq.Header.Set("HTTP-Referer", "https://github.com/cursor-ai")
 		httpReq.Header.Set("X-Title", "Cursor LLM Service")
 		httpReq.Header.Set("Connection", "keep-alive")
+		httpReq.Header.Set("Cache-Control", "no-cache")
+		httpReq.Header.Set("Transfer-Encoding", "chunked")
 
-		// Send request
-		resp, err := p.httpClient.Do(httpReq)
+		// Send request with timeout
+		client := &http.Client{
+			Transport: defaultTransport,
+			Timeout:   60 * time.Second,
+		}
+		resp, err := client.Do(httpReq)
 		if err != nil {
 			errorChan <- fmt.Errorf("failed to send request: %w", err)
 			return
@@ -286,80 +426,9 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			return
 		}
 
-		reader := bufio.NewReaderSize(resp.Body, 32*1024) // Larger buffer for better performance
-		var usage *pb.UsageInfo
-
-		for {
-			// Check if context is cancelled
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			// Read until next event
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				errorChan <- fmt.Errorf("error reading stream: %w", err)
-				return
-			}
-
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				if usage != nil {
-					responseChan <- &pb.LLMStreamResponse{
-						Type:  pb.ResponseType_TYPE_USAGE,
-						Usage: usage,
-					}
-				}
-				return
-			}
-
-			var streamResp streamResponseBody
-			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-				errorChan <- fmt.Errorf("failed to parse SSE data: %w", err)
-				return
-			}
-
-			if len(streamResp.Choices) == 0 {
-				continue
-			}
-
-			if streamResp.Usage != nil {
-				usage = &pb.UsageInfo{
-					PromptTokens:     streamResp.Usage.PromptTokens,
-					CompletionTokens: streamResp.Usage.CompletionTokens,
-					TotalTokens:      streamResp.Usage.TotalTokens,
-				}
-			}
-
-			chunk := streamResp.Choices[0].Delta.Content
-			if streamResp.Choices[0].FinishReason != "" {
-				responseChan <- &pb.LLMStreamResponse{
-					Type:         pb.ResponseType_TYPE_FINISH_REASON,
-					FinishReason: streamResp.Choices[0].FinishReason,
-				}
-			}
-
-			if chunk != "" {
-				responseChan <- &pb.LLMStreamResponse{
-					Type:    pb.ResponseType_TYPE_CONTENT,
-					Content: chunk,
-				}
-			}
-		}
+		// Create stream processor
+		processor := newStreamProcessor(ctx, resp.Body, responseChan, errorChan)
+		processor.process()
 	}()
 
 	return responseChan, errorChan
