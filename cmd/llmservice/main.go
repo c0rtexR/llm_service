@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
 	"llmservice/internal/provider"
@@ -96,6 +97,13 @@ func main() {
 	llmServer := server.New(providers)
 	pb.RegisterLLMServiceServer(grpcServer, llmServer)
 
+	// Register health check service
+	healthServer := server.NewHealthServer()
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
+
+	// Enable reflection for development tools
+	reflection.Register(grpcServer)
+
 	// Print registered providers
 	logger.Info("registered providers", zap.Strings("providers", func() []string {
 		var names []string
@@ -104,9 +112,6 @@ func main() {
 		}
 		return names
 	}()))
-
-	// Enable reflection for development tools
-	reflection.Register(grpcServer)
 
 	// Start listening
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))

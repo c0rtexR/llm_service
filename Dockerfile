@@ -22,8 +22,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o llm-service ./cmd/llmservice
 # Final stage
 FROM alpine:3.19
 
-# Install CA certificates for HTTPS calls
-RUN apk add --no-cache ca-certificates
+# Install CA certificates and grpc-health-probe
+RUN apk add --no-cache ca-certificates curl && \
+    GRPC_HEALTH_PROBE_VERSION=v0.4.25 && \
+    curl -L -o /bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-amd64 && \
+    chmod +x /bin/grpc_health_probe
 
 # Create non-root user
 RUN adduser -D -g '' appuser
