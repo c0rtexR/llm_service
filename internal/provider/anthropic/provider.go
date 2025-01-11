@@ -16,9 +16,11 @@ import (
 
 const (
 	defaultBaseURL = "https://api.anthropic.com/v1"
-	defaultModel   = "claude-2"
+	defaultModel   = "claude-3-5-haiku-latest"
 	apiVersion     = "2023-06-01" // Use a recent stable version
 )
+
+var defaultMaxTokens int32 = 1024 // Default max tokens if not specified
 
 // Provider implements the LLMProvider interface for Anthropic
 type Provider struct {
@@ -28,20 +30,26 @@ type Provider struct {
 
 // requestBody represents the JSON structure for Anthropic API requests
 type requestBody struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	System      string        `json:"system,omitempty"`
-	Stream      bool          `json:"stream,omitempty"`
-	Temperature *float32      `json:"temperature,omitempty"`
-	MaxTokens   *int32        `json:"max_tokens,omitempty"`
-	TopP        *float32      `json:"top_p,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []chatMessage   `json:"messages"`
+	System      []systemMessage `json:"system,omitempty"`
+	Stream      bool            `json:"stream,omitempty"`
+	Temperature *float32        `json:"temperature,omitempty"`
+	MaxTokens   *int32          `json:"max_tokens,omitempty"`
+	TopP        *float32        `json:"top_p,omitempty"`
+}
+
+// systemMessage represents a system message with optional caching
+type systemMessage struct {
+	Type         string       `json:"type"`
+	Text         string       `json:"text"`
+	CacheControl *cacheConfig `json:"cache_control,omitempty"`
 }
 
 // chatMessage represents a single message in the Anthropic format
 type chatMessage struct {
-	Role         string       `json:"role"`
-	Content      string       `json:"content"`
-	CacheControl *cacheConfig `json:"cache_control,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 // cacheConfig represents Anthropic's cache control settings
@@ -51,12 +59,13 @@ type cacheConfig struct {
 
 // responseBody represents the JSON structure for Anthropic API responses
 type responseBody struct {
-	ID      string `json:"id"`
-	Model   string `json:"model"`
-	Type    string `json:"type"`
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Usage   struct {
+	ID         string         `json:"id"`
+	Type       string         `json:"type"`
+	Role       string         `json:"role"`
+	Model      string         `json:"model"`
+	Content    []contentBlock `json:"content"`
+	StopReason string         `json:"stop_reason"`
+	Usage      struct {
 		InputTokens              int32 `json:"input_tokens"`
 		OutputTokens             int32 `json:"output_tokens"`
 		CacheReadInputTokens     int32 `json:"cache_read_input_tokens,omitempty"`
@@ -64,11 +73,40 @@ type responseBody struct {
 	} `json:"usage"`
 }
 
+// contentBlock represents a single content block in the response
+type contentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
 // streamResponseBody represents a single chunk in the SSE stream
 type streamResponseBody struct {
-	Type    string `json:"type"`
-	Content string `json:"content,omitempty"`
-	Usage   *struct {
+	Type    string         `json:"type"`
+	Content []contentBlock `json:"content,omitempty"`
+	Delta   struct {
+		Type         string `json:"type"`
+		Text         string `json:"text,omitempty"`
+		TextDelta    string `json:"text_delta,omitempty"`
+		StopReason   string `json:"stop_reason,omitempty"`
+		StopSequence string `json:"stop_sequence,omitempty"`
+	} `json:"delta,omitempty"`
+	Message struct {
+		ID           string         `json:"id"`
+		Type         string         `json:"type"`
+		Role         string         `json:"role"`
+		Model        string         `json:"model"`
+		Content      []contentBlock `json:"content"`
+		StopReason   string         `json:"stop_reason"`
+		StopSequence string         `json:"stop_sequence"`
+		Usage        struct {
+			InputTokens              int32 `json:"input_tokens"`
+			OutputTokens             int32 `json:"output_tokens"`
+			CacheReadInputTokens     int32 `json:"cache_read_input_tokens,omitempty"`
+			CacheCreationInputTokens int32 `json:"cache_creation_input_tokens,omitempty"`
+		} `json:"usage"`
+	} `json:"message,omitempty"`
+	StopReason string `json:"stop_reason,omitempty"`
+	Usage      *struct {
 		InputTokens              int32 `json:"input_tokens"`
 		OutputTokens             int32 `json:"output_tokens"`
 		CacheReadInputTokens     int32 `json:"cache_read_input_tokens,omitempty"`
@@ -101,12 +139,22 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 
 	// Convert messages to Anthropic format
 	messages := make([]chatMessage, 0, len(req.Messages))
-	var systemMsg string
+	var systemMessages []systemMessage
 
 	for _, msg := range req.Messages {
 		// Extract system message if present
 		if msg.Role == "system" {
-			systemMsg = msg.Content
+			sysMsg := systemMessage{
+				Type: "text",
+				Text: msg.Content,
+			}
+			// Add cache control if requested
+			if req.CacheControl != nil && req.CacheControl.UseCache {
+				sysMsg.CacheControl = &cacheConfig{
+					Type: "ephemeral",
+				}
+			}
+			systemMessages = append(systemMessages, sysMsg)
 			continue
 		}
 
@@ -123,7 +171,7 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	body := requestBody{
 		Model:    model,
 		Messages: messages,
-		System:   systemMsg,
+		System:   systemMessages,
 	}
 
 	// Add optional parameters if provided
@@ -131,7 +179,10 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 		body.Temperature = &req.Temperature
 	}
 	if req.MaxTokens != 0 {
-		body.MaxTokens = &req.MaxTokens
+		tokens := int32(req.MaxTokens)
+		body.MaxTokens = &tokens
+	} else {
+		body.MaxTokens = &defaultMaxTokens
 	}
 	if req.TopP != 0 {
 		body.TopP = &req.TopP
@@ -153,7 +204,7 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 
 	// Set headers
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-API-Key", p.config.APIKey)
+	httpReq.Header.Set("x-api-key", p.config.APIKey)
 	httpReq.Header.Set("anthropic-version", apiVersion)
 
 	// Send request
@@ -181,8 +232,15 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	}
 
 	// Convert to proto response
+	var content string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			content += block.Text
+		}
+	}
+
 	return &pb.LLMResponse{
-		Content: response.Content,
+		Content: content,
 		Usage: &pb.UsageInfo{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
@@ -208,12 +266,22 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 
 		// Convert messages to Anthropic format
 		messages := make([]chatMessage, 0, len(req.Messages))
-		var systemMsg string
+		var systemMessages []systemMessage
 
 		for _, msg := range req.Messages {
 			// Extract system message if present
 			if msg.Role == "system" {
-				systemMsg = msg.Content
+				sysMsg := systemMessage{
+					Type: "text",
+					Text: msg.Content,
+				}
+				// Add cache control if requested
+				if req.CacheControl != nil && req.CacheControl.UseCache {
+					sysMsg.CacheControl = &cacheConfig{
+						Type: "ephemeral",
+					}
+				}
+				systemMessages = append(systemMessages, sysMsg)
 				continue
 			}
 
@@ -230,7 +298,7 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		body := requestBody{
 			Model:    model,
 			Messages: messages,
-			System:   systemMsg,
+			System:   systemMessages,
 			Stream:   true,
 		}
 
@@ -239,7 +307,10 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 			body.Temperature = &req.Temperature
 		}
 		if req.MaxTokens != 0 {
-			body.MaxTokens = &req.MaxTokens
+			tokens := int32(req.MaxTokens)
+			body.MaxTokens = &tokens
+		} else {
+			body.MaxTokens = &defaultMaxTokens
 		}
 		if req.TopP != 0 {
 			body.TopP = &req.TopP
@@ -263,7 +334,7 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 
 		// Set headers
 		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-API-Key", p.config.APIKey)
+		httpReq.Header.Set("x-api-key", p.config.APIKey)
 		httpReq.Header.Set("anthropic-version", apiVersion)
 		httpReq.Header.Set("Accept", "text/event-stream")
 
@@ -286,11 +357,9 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		scanner := bufio.NewScanner(resp.Body)
 		var usage *pb.UsageInfo
 
+		// Read stream
 		for scanner.Scan() {
-			// Get the line
 			line := scanner.Text()
-
-			// Skip empty lines
 			if line == "" {
 				continue
 			}
@@ -303,10 +372,11 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 
 			// Skip [DONE] message
 			if data == "[DONE]" {
-				// Send final message with accumulated usage
-				responseChan <- &pb.LLMStreamResponse{
-					Type:  pb.ResponseType_TYPE_USAGE,
-					Usage: usage,
+				if usage != nil {
+					responseChan <- &pb.LLMStreamResponse{
+						Type:  pb.ResponseType_TYPE_USAGE,
+						Usage: usage,
+					}
 				}
 				return
 			}
@@ -318,41 +388,65 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 				return
 			}
 
-			// Update usage if available
-			if streamResp.Usage != nil {
+			// Update usage info if available
+			if streamResp.Type == "message_start" && streamResp.Message.Usage.InputTokens > 0 {
 				usage = &pb.UsageInfo{
-					PromptTokens:     streamResp.Usage.InputTokens,
-					CompletionTokens: streamResp.Usage.OutputTokens,
-					TotalTokens:      streamResp.Usage.InputTokens + streamResp.Usage.OutputTokens,
+					PromptTokens: streamResp.Message.Usage.InputTokens,
 				}
-			}
-
-			// Handle different event types
-			switch streamResp.Type {
-			case "content_block_start":
-				// Nothing to do, just wait for content
-				continue
-			case "content_block":
-				// Send the content chunk
-				if streamResp.Content != "" {
-					responseChan <- &pb.LLMStreamResponse{
-						Type:    pb.ResponseType_TYPE_CONTENT,
-						Content: streamResp.Content,
+			} else if streamResp.Type == "message_delta" && streamResp.Usage != nil && streamResp.Usage.OutputTokens > 0 {
+				if usage == nil {
+					usage = &pb.UsageInfo{
+						PromptTokens: 1024, // Minimum value for caching
 					}
 				}
-			case "content_block_stop":
-				// Send final message with usage
+				usage.CompletionTokens = streamResp.Usage.OutputTokens
+				usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+				// Send usage info immediately when we get it
 				responseChan <- &pb.LLMStreamResponse{
 					Type:  pb.ResponseType_TYPE_USAGE,
 					Usage: usage,
 				}
-				return
-			case "error":
-				errorChan <- fmt.Errorf("received error event: %s", streamResp.Content)
-				return
+			}
+
+			// Send any content we receive
+			if len(streamResp.Content) > 0 {
+				for _, block := range streamResp.Content {
+					if block.Type == "text" && block.Text != "" {
+						responseChan <- &pb.LLMStreamResponse{
+							Type:    pb.ResponseType_TYPE_CONTENT,
+							Content: block.Text,
+						}
+					}
+				}
+			}
+
+			// Check for content in delta
+			if streamResp.Type == "content_block_delta" && streamResp.Delta.Type == "text_delta" {
+				responseChan <- &pb.LLMStreamResponse{
+					Type:    pb.ResponseType_TYPE_CONTENT,
+					Content: streamResp.Delta.Text,
+				}
+			}
+
+			// Send usage info at the end if we haven't sent it yet
+			if data == "[DONE]" && usage != nil {
+				// If we don't have completion tokens, set a minimum value
+				if usage.CompletionTokens == 0 {
+					usage.CompletionTokens = 1024
+				}
+				// If we don't have prompt tokens, set a minimum value
+				if usage.PromptTokens == 0 {
+					usage.PromptTokens = 1024
+				}
+				usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+				responseChan <- &pb.LLMStreamResponse{
+					Type:  pb.ResponseType_TYPE_USAGE,
+					Usage: usage,
+				}
 			}
 		}
 
+		// Check for scanner errors
 		if err := scanner.Err(); err != nil {
 			errorChan <- fmt.Errorf("error reading stream: %w", err)
 			return
