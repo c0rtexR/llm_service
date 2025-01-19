@@ -47,7 +47,7 @@ func main() {
 	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
 		p := openrouter.New(&provider.Config{
 			APIKey:       key,
-			DefaultModel: "openai/gpt-3.5-turbo", // Default model for OpenRouter
+			DefaultModel: "google/gemini-flash-1.5-8b", // Exact model ID
 		})
 		providers["openrouter"] = p
 		logger.Info("initialized OpenRouter provider")

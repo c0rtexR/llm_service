@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  llmservice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "50052:50051"
+    environment:
+      - PORT=50051
+      # Provider API keys (to be set via .env file)
+      - OPENROUTER_API_KEY
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GEMINI_API_KEY
+    healthcheck:
+      test: ["CMD", "/bin/grpc_health_probe", "-addr=:50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3" 

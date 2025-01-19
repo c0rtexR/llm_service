@@ -12,13 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"llmservice/internal/provider"
 	pb "llmservice/proto"
 )
 
 const (
 	defaultBaseURL = "https://openrouter.ai/api/v1"
-	defaultModel   = "openai/gpt-3.5-turbo"
+	defaultModel   = "google/gemini-flash-1.5-8b"
 )
 
 // Provider implements the LLMProvider interface for OpenRouter
@@ -225,12 +227,19 @@ func (sp *streamProcessor) sendResponse(resp *pb.LLMStreamResponse) {
 
 // New creates a new OpenRouter provider instance
 func New(config *provider.Config) *Provider {
+	logger := zap.L()
+
 	if config.BaseURL == "" {
 		config.BaseURL = defaultBaseURL
 	}
 	if config.DefaultModel == "" {
 		config.DefaultModel = defaultModel
 	}
+
+	logger.Info("initializing OpenRouter provider",
+		zap.String("base_url", config.BaseURL),
+		zap.String("default_model", config.DefaultModel),
+		zap.String("api_key_length", fmt.Sprintf("%d", len(config.APIKey))))
 
 	return &Provider{
 		config: config,
@@ -243,11 +252,18 @@ func New(config *provider.Config) *Provider {
 
 // Invoke implements the LLMProvider interface for synchronous requests
 func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMResponse, error) {
+	logger := zap.L()
+
 	// Use model from request or fall back to default
 	model := req.Model
 	if model == "" {
 		model = p.config.DefaultModel
 	}
+
+	logger.Info("preparing OpenRouter request",
+		zap.String("model", model),
+		zap.Int("messages_count", len(req.Messages)),
+		zap.String("api_key_length", fmt.Sprintf("%d", len(p.config.APIKey))))
 
 	// Convert messages to OpenRouter format
 	messages := make([]chatMessage, len(req.Messages))
@@ -281,6 +297,8 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	logger.Debug("request body", zap.String("body", string(jsonBody)))
+
 	// Create HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		fmt.Sprintf("%s/chat/completions", p.config.BaseURL),
@@ -291,9 +309,21 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 
 	// Set headers
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.config.APIKey))
-	httpReq.Header.Set("HTTP-Referer", "https://github.com/cursor-ai")
-	httpReq.Header.Set("X-Title", "Cursor LLM Service")
+	authHeader := fmt.Sprintf("Bearer %s", p.config.APIKey)
+	httpReq.Header.Set("Authorization", authHeader)
+	httpReq.Header.Set("HTTP-Referer", "https://github.com/your-username/llm-service")
+	httpReq.Header.Set("X-Title", "LLM Service - Cursor IDE")
+	httpReq.Header.Set("User-Agent", "LLMService/1.0.0")
+
+	logger.Info("sending request to OpenRouter",
+		zap.String("url", httpReq.URL.String()),
+		zap.Strings("headers", []string{
+			"Content-Type: " + httpReq.Header.Get("Content-Type"),
+			"HTTP-Referer: " + httpReq.Header.Get("HTTP-Referer"),
+			"X-Title: " + httpReq.Header.Get("X-Title"),
+			"User-Agent: " + httpReq.Header.Get("User-Agent"),
+			"Authorization-Length: " + fmt.Sprintf("%d", len(authHeader)),
+		}))
 
 	// Send request
 	resp, err := p.httpClient.Do(httpReq)
@@ -307,6 +337,10 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	logger.Info("received response from OpenRouter",
+		zap.Int("status_code", resp.StatusCode),
+		zap.String("response", string(respBody)))
 
 	// Check for error response
 	if resp.StatusCode != http.StatusOK {
@@ -323,6 +357,10 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	if len(response.Choices) == 0 {
 		return nil, fmt.Errorf("no completion choices in response")
 	}
+
+	logger.Info("successfully processed OpenRouter response",
+		zap.String("model", response.Model),
+		zap.Int32("total_tokens", response.Usage.TotalTokens))
 
 	// Convert to proto response
 	return &pb.LLMResponse{
@@ -401,8 +439,9 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.config.APIKey))
 		httpReq.Header.Set("Accept", "text/event-stream")
-		httpReq.Header.Set("HTTP-Referer", "https://github.com/cursor-ai")
-		httpReq.Header.Set("X-Title", "Cursor LLM Service")
+		httpReq.Header.Set("HTTP-Referer", "https://github.com/your-username/llm-service")
+		httpReq.Header.Set("X-Title", "LLM Service - Cursor IDE")
+		httpReq.Header.Set("User-Agent", "LLMService/1.0.0")
 		httpReq.Header.Set("Connection", "keep-alive")
 		httpReq.Header.Set("Cache-Control", "no-cache")
 		httpReq.Header.Set("Transfer-Encoding", "chunked")
