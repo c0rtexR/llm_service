@@ -6,11 +6,11 @@ import (
 	"log"
 	"os"
 
-	"llmservice/client"
-	"llmservice/internal/provider"
-	"llmservice/internal/provider/anthropic"
-	"llmservice/internal/provider/openai"
-	"llmservice/proto"
+	"github.com/c0rtexR/llm_service/client"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/internal/provider/anthropic"
+	"github.com/c0rtexR/llm_service/internal/provider/openai"
+	"github.com/c0rtexR/llm_service/proto"
 )
 
 func main() {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	pb "llmservice/proto"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 func TestOpenRouterBasicCall(t *testing.T) {

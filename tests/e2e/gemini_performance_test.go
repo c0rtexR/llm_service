@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "llmservice/proto"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 // retryWithBackoff attempts the operation with exponential backoff

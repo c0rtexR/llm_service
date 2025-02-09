@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	"llmservice/internal/provider"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 // mockProvider implements the LLMProvider interface for testing

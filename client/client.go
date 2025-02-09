@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"llmservice/internal/provider"
-	"llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/proto"
 )
 
 // Provider represents supported LLM providers

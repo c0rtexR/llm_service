@@ -14,8 +14,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"llmservice/internal/provider"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 const (
@@ -313,7 +313,7 @@ func (p *Provider) Invoke(ctx context.Context, req *pb.LLMRequest) (*pb.LLMRespo
 	httpReq.Header.Set("Authorization", authHeader)
 	httpReq.Header.Set("HTTP-Referer", "https://github.com/your-username/llm-service")
 	httpReq.Header.Set("X-Title", "LLM Service - Cursor IDE")
-	httpReq.Header.Set("User-Agent", "LLMService/1.0.0")
+	httpReq.Header.Set("User-Agent", "github.com/c0rtexR/llm_service/1.0.0")
 
 	logger.Info("sending request to OpenRouter",
 		zap.String("url", httpReq.URL.String()),
@@ -441,7 +441,7 @@ func (p *Provider) InvokeStream(ctx context.Context, req *pb.LLMRequest) (<-chan
 		httpReq.Header.Set("Accept", "text/event-stream")
 		httpReq.Header.Set("HTTP-Referer", "https://github.com/your-username/llm-service")
 		httpReq.Header.Set("X-Title", "LLM Service - Cursor IDE")
-		httpReq.Header.Set("User-Agent", "LLMService/1.0.0")
+		httpReq.Header.Set("User-Agent", "github.com/c0rtexR/llm_service/1.0.0")
 		httpReq.Header.Set("Connection", "keep-alive")
 		httpReq.Header.Set("Cache-Control", "no-cache")
 		httpReq.Header.Set("Transfer-Encoding", "chunked")

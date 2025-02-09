@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"llmservice/internal/provider"
-	"llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/proto"
 )
 
 // MockProvider implements provider.LLMProvider for testing

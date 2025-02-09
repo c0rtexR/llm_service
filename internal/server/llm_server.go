@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"llmservice/internal/provider"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 // LLMServer implements the LLMServiceServer interface

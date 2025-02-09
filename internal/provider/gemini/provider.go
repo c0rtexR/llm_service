@@ -8,8 +8,8 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	"llmservice/internal/provider"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 type Provider struct {

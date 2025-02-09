@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
-	"llmservice/internal/provider"
-	"llmservice/internal/provider/openrouter"
-	"llmservice/internal/server"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/internal/provider/openrouter"
+	"github.com/c0rtexR/llm_service/internal/server"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 type openrouterTestServer struct {

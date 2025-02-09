@@ -3,7 +3,7 @@ package provider
 import (
 	"context"
 
-	pb "llmservice/proto"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 // LLMProvider defines the interface that all LLM providers must implement

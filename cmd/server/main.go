@@ -6,13 +6,13 @@ import (
 	"net"
 	"os"
 
-	"llmservice/internal/provider"
-	"llmservice/internal/provider/anthropic"
-	"llmservice/internal/provider/gemini"
-	"llmservice/internal/provider/openai"
-	"llmservice/internal/provider/openrouter"
-	"llmservice/internal/server"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/internal/provider/anthropic"
+	"github.com/c0rtexR/llm_service/internal/provider/gemini"
+	"github.com/c0rtexR/llm_service/internal/provider/openai"
+	"github.com/c0rtexR/llm_service/internal/provider/openrouter"
+	"github.com/c0rtexR/llm_service/internal/server"
+	pb "github.com/c0rtexR/llm_service/proto"
 
 	"google.golang.org/grpc"
 )

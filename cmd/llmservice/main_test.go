@@ -14,9 +14,9 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/test/bufconn"
 
-	"llmservice/internal/provider"
-	"llmservice/internal/server"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/internal/server"
+	pb "github.com/c0rtexR/llm_service/proto"
 )
 
 const (

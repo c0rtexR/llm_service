@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"llmservice/internal/provider"
-	pb "llmservice/proto"
+	"github.com/c0rtexR/llm_service/internal/provider"
+	pb "github.com/c0rtexR/llm_service/proto"
 
 	"github.com/stretchr/testify/require"
 )
