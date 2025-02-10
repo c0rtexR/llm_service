@@ -7,9 +7,7 @@ import (
 	"os"
 
 	"github.com/c0rtexR/llm_service/client"
-	"github.com/c0rtexR/llm_service/internal/provider"
-	"github.com/c0rtexR/llm_service/internal/provider/anthropic"
-	"github.com/c0rtexR/llm_service/internal/provider/openai"
+	"github.com/c0rtexR/llm_service/pkg/provider"
 	"github.com/c0rtexR/llm_service/proto"
 )
 
@@ -19,7 +17,7 @@ func main() {
 
 	// Initialize OpenAI provider
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		providers[client.OpenAI] = openai.New(&provider.Config{
+		providers[client.OpenAI] = provider.NewOpenAI(&provider.Config{
 			APIKey:       key,
 			DefaultModel: "gpt-3.5-turbo",
 		})
@@ -27,7 +25,7 @@ func main() {
 
 	// Initialize Anthropic provider
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		providers[client.Anthropic] = anthropic.New(&provider.Config{
+		providers[client.Anthropic] = provider.NewAnthropic(&provider.Config{
 			APIKey:       key,
 			DefaultModel: "claude-2",
 		})
@@ -235,7 +233,7 @@ func createLLMClient() *client.Client {
 	providers := make(map[client.Provider]provider.LLMProvider)
 
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		providers[client.OpenAI] = openai.New(&provider.Config{
+		providers[client.OpenAI] = provider.NewOpenAI(&provider.Config{
 			APIKey:       key,
 			DefaultModel: "gpt-3.5-turbo",
 		})

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/c0rtexR/llm_service/internal/provider"
+	"github.com/c0rtexR/llm_service/pkg/provider"
 	"github.com/c0rtexR/llm_service/proto"
 )
 
