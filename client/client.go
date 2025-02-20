@@ -48,13 +48,28 @@ func (p Provider) IsValid() bool {
 	}
 }
 
+// LLMClient defines the interface for interacting with LLM providers
+type LLMClient interface {
+	// Invoke sends a request to an LLM and returns a single response
+	Invoke(ctx context.Context, provider Provider, messages []Message, options ...Option) (*proto.LLMResponse, error)
+
+	// InvokeSimple is a convenience method for simple single-prompt requests
+	InvokeSimple(ctx context.Context, provider Provider, prompt string, options ...Option) (*proto.LLMResponse, error)
+
+	// InvokeStream sends a request to an LLM and returns a stream of responses
+	InvokeStream(ctx context.Context, provider Provider, messages []Message, options ...Option) (<-chan *proto.LLMStreamResponse, <-chan error)
+
+	// InvokeStreamSimple is a convenience method for simple single-prompt streaming requests
+	InvokeStreamSimple(ctx context.Context, provider Provider, prompt string, options ...Option) (<-chan *proto.LLMStreamResponse, <-chan error)
+}
+
 // Client provides direct access to LLM functionality without gRPC
 type Client struct {
 	providers map[Provider]provider.LLMProvider
 }
 
 // New creates a new LLM client with the given providers
-func New(providers map[Provider]provider.LLMProvider) *Client {
+func New(providers map[Provider]provider.LLMProvider) LLMClient {
 	return &Client{
 		providers: providers,
 	}

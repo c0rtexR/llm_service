@@ -131,10 +131,10 @@ func main() {
 // Example of maintaining conversation state in a struct
 type Conversation struct {
 	messages []client.Message
-	llm      *client.Client
+	llm      client.LLMClient
 }
 
-func NewConversation(llm *client.Client, systemPrompt string) *Conversation {
+func NewConversation(llm client.LLMClient, systemPrompt string) *Conversation {
 	return &Conversation{
 		llm: llm,
 		messages: []client.Message{
@@ -229,7 +229,7 @@ func generateProductDescription(productName string) (string, error) {
 	return resp.Content, nil
 }
 
-func createLLMClient() *client.Client {
+func createLLMClient() client.LLMClient {
 	providers := make(map[client.Provider]provider.LLMProvider)
 
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {

@@ -57,6 +57,12 @@ func TestClient_InvokeSimple(t *testing.T) {
 
 	client := New(providers)
 
+	// Verify client is DefaultClient
+	_, ok := client.(*Client)
+	if !ok {
+		t.Fatal("Expected client to be *DefaultClient")
+	}
+
 	// Test simple invocation
 	resp, err := client.InvokeSimple(context.Background(), OpenAI, "Hello", WithTemperature(0.7))
 	if err != nil {
